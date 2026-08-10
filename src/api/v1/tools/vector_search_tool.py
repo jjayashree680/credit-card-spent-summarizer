@@ -1,7 +1,8 @@
+from src.api.v1.states.rag_state import RAGState
 from src.core.db import get_vector_store
 
 
-def vector_search_node(state):
+def vector_search_node(state: RAGState):
     """
     Perform semantic vector search against PGVector.
     Returns top 20 matching chunks.
@@ -13,8 +14,16 @@ def vector_search_node(state):
 
     vector_store = get_vector_store()
 
-    docs = vector_store.similarity_search(query=query, k=20)
+    docs = vector_store.similarity_search(
+        query=query,
+        k=20
+    )
 
-    print(f"[vector_search_node] Retrieved {len(docs)} documents")
+    print(
+        f"[vector_search_node] Retrieved {len(docs)} documents"
+    )
 
-    return {**state, "vector_docs": docs}
+    return {
+        **state,
+        "vector_docs": docs
+    }
