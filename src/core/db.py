@@ -1,0 +1,31 @@
+import os
+
+from dotenv import load_dotenv
+from langchain_postgres import PGVector
+from langchain_openai import OpenAIEmbeddings
+
+
+load_dotenv()
+
+
+model = os.getenv("OPENAI_EMBEDDING_MODEL")
+api_key = os.getenv("OPENAI_API_KEY")
+pg_connection = os.getenv("PG_CONNECTION_STRING")
+
+
+def get_embeddings():
+    return OpenAIEmbeddings(
+        model=model,
+        api_key=api_key,
+    )
+
+
+def get_vector_store(
+    collection_name: str = "CreditCardSummarizerVectorStore",
+):
+    return PGVector(
+        collection_name=collection_name,
+        connection=pg_connection,
+        embeddings=get_embeddings(),
+        use_jsonb=True,
+    )
