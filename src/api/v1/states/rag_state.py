@@ -1,25 +1,32 @@
-from typing import TypedDict, List, Dict, Any
+from typing import Any, Dict, List, TypedDict
+
+from langchain_core.documents import Document
 
 
-class RAGState(TypedDict):
+class RAGState(TypedDict, total=False):
 
-    # user query
     query: str
 
-    # sql retrieval output
+    card_id: str
+
+    billing_month: str
+
+    intent: Dict[str, Any]
+
     sql_context: Dict[str, Any]
 
-    # retrieval outputs
-    vector_docs: List
-    fts_docs: List
-    hybrid_docs: List
-    reranked_docs: List
+    vector_docs: List[Document]
 
-    # merged context
+    fts_docs: List[Document]
+
+    hybrid_docs: List[Document]
+
+    reranked_docs: List[Document]
+
     final_context: str
 
-    # final response
     response: Dict[str, Any]
 
-    # evaluation
+    evaluation_result: Dict[str, Any]
+
     retry_count: int
