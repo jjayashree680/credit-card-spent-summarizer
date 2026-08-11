@@ -105,7 +105,7 @@ def nl2sql(query: str):
     }
 
 
-def analytics_retrieval(query: str):
+def analytics_retrieval(card_id: str, billing_month: str,):
 
     db = get_sql_database()
 
@@ -210,7 +210,10 @@ def sql_retrieval_node(state):
 
     if retrieval_type == "ANALYTICS":
 
-        sql_context = analytics_retrieval(query)
+        sql_context = analytics_retrieval(
+            card_id=state["card_id"],
+            billing_month=state["billing_month"],
+        )
 
     else:
 
