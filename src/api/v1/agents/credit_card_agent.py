@@ -262,10 +262,12 @@ credit_card_graph = build_credit_card_graph()
 # ---------------------------------------------------------
 
 
-def run_credit_card_agent(query: str, thread_id: str = "default"):
+def run_credit_card_agent(query: str, card_id: str | None = None, billing_month: str | None = None, thread_id: str = "default"):
 
     initial_state = {
         "query": query,
+        "card_id": card_id,
+        "billing_month": billing_month,
         "sql_context": {},
         "vector_docs": [],
         "fts_docs": [],

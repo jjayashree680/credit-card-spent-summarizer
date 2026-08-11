@@ -7,7 +7,7 @@ from typing import Optional, List
 
 
 class QueryRequest(BaseModel):
-    query: str = Field(description="The user's question")
+    query: str
 
 
 class QueryResponse(BaseModel):
