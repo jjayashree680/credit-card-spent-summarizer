@@ -10,6 +10,7 @@ from langchain_openai import ChatOpenAI
 from langchain_core.prompts import ChatPromptTemplate
 from langgraph.graph import StateGraph, END
 from langgraph.checkpoint.memory import MemorySaver
+from src.api.v1.tools.guardrails_tool import guardrails_node
 
 from src.api.v1.states.rag_state import RAGState
 
@@ -60,41 +61,28 @@ def intent_node(state: RAGState):
             (
                 "system",
                 """
-                Analyze the user's question.
+            You are a Credit Card Spend Analyst.
 
-                Determine:
+            Rules:
 
-                need_sql:
-                    True if customer data,
-                    transactions,
-                    rewards,
-                    statements,
-                    spending,
-                    fee waiver progress,
-                    international spend,
-                    MoM comparison are needed.
-
-                need_rag:
-                    True if card features,
-                    rewards policy,
-                    redemption rules,
-                    billing rules,
-                    forex rules,
-                    fee waiver policy,
-                    credit card benefits are needed.
-
-                Most queries may require BOTH.
-
-                Return decision only.
-                """,
+            1. SQL context is the source of truth.
+            2. Never invent numbers.
+            3. Use KB context only for policy explanations.
+            4. Explain rewards.
+            5. Explain forex fees if applicable.
+            6. Explain fee waiver eligibility if applicable.
+            7. Provide a concise customer-friendly summary.
+            """,
             ),
             (
                 "human",
                 """
-                Query:
+            Question:
 
-                {query}
-                """,
+            {query}
+
+         
+            """,
             ),
         ]
     )
@@ -166,27 +154,33 @@ def summary_node(state: RAGState):
 # ---------------------------------------------------------
 
 
-def evaluate_node(state: RAGState):
+def evaluate_node(state):
 
-    print("=== EVALUATE NODE ===")
+    print("===== EVALUATE =====")
 
     response = state["response"]
 
     answer = response.get("answer", "")
 
-    retry_count = state.get("retry_count", 0)
+    sql_context = state.get("sql_context", {})
 
-    evaluation_result = {"passed": True, "reason": "Validation passed"}
+    passed = True
+
+    reason = "Validation Passed"
 
     if len(answer.strip()) < 20:
 
-        evaluation_result = {"passed": False, "reason": "Answer too short"}
+        passed = False
 
-    return {
-        **state,
-        "evaluation_result": evaluation_result,
-        "retry_count": retry_count + 1,
-    }
+        reason = "Answer too short"
+
+    if not sql_context:
+
+        passed = False
+
+        reason = "SQL context missing"
+
+    return {**state, "evaluation_result": {"passed": passed, "reason": reason}}
 
 
 # ---------------------------------------------------------
@@ -229,6 +223,8 @@ def build_credit_card_graph():
 
     workflow.add_node("evaluate", evaluate_node)
 
+    workflow.add_node("guardrails", guardrails_node)
+
     workflow.set_entry_point("intent")
 
     workflow.add_edge("intent", "sql_retrieval")
@@ -244,8 +240,15 @@ def build_credit_card_graph():
     workflow.add_edge("summary", "evaluate")
 
     workflow.add_conditional_edges(
-        "evaluate", evaluation_router, {"retry": "summary", "pass": END}
+        "evaluate",
+        evaluation_router,
+        {
+            "retry": "summary",
+            "pass": "guardrails",
+        },
     )
+
+    workflow.add_edge("guardrails", END)
 
     memory = MemorySaver()
 
@@ -262,7 +265,12 @@ credit_card_graph = build_credit_card_graph()
 # ---------------------------------------------------------
 
 
-def run_credit_card_agent(query: str, card_id: str | None = None, billing_month: str | None = None, thread_id: str = "default"):
+def run_credit_card_agent(
+    query: str,
+    card_id: str | None = None,
+    billing_month: str | None = None,
+    thread_id: str = "default",
+):
 
     initial_state = {
         "query": query,
