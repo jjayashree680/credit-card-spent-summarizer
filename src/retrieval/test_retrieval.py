@@ -91,18 +91,18 @@
 
 # src/retrieval/test_agent.py
 
-from src.api.v1.agents.credit_card_agent import run_credit_card_agent
+# from src.api.v1.agents.credit_card_agent import run_credit_card_agent
 
-response = run_credit_card_agent(
-    query="""
-    Summarise my spending by category
-    for March 2026 on CC-881001
-    """,
-    card_id="CC-881001",
-    billing_month="2026-03",
-)
+# response = run_credit_card_agent(
+#     query="""
+#     Summarise my spending by category
+#     for March 2026 on CC-881001
+#     """,
+#     card_id="CC-881001",
+#     billing_month="2026-03",
+# )
 
-print(response)
+# print(response)
 
 
 # from dotenv import load_dotenv
@@ -111,3 +111,49 @@ print(response)
 # load_dotenv()
 
 # print(os.getenv("PG_RDBMS_CONNECTION_STRING"))
+
+# src/retrieval/test_agent.py
+
+from src.api.v1.agents.credit_card_agent import run_credit_card_agent
+
+test_queries = [
+    (
+        "Summarise my spending by category for March 2026 on CC-881001",
+        "CC-881001",
+        "2026-03",
+    ),
+    (
+        "Show international transactions on CC-881001",
+        "CC-881001",
+        "2026-03",
+    ),
+    (
+        "Compare spending this month vs last month for CC-881001",
+        "CC-881001",
+        "2026-03",
+    ),
+    (
+        "Is CC-883001 on track for annual fee waiver?",
+        "CC-883001",
+        "2026-03",
+    ),
+    (
+        "How many reward points has James earned on CC-881001?",
+        "CC-881001",
+        "2026-03",
+    ),
+]
+
+for query, card_id, billing_month in test_queries:
+
+    print("=" * 80)
+    print(query)
+    print("=" * 80)
+
+    response = run_credit_card_agent(
+        query=query,
+        card_id=card_id,
+        billing_month=billing_month,
+    )
+
+    print(response)
