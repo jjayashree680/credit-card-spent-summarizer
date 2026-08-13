@@ -13,78 +13,186 @@ load_dotenv()
 def get_llm():
 
     return ChatOpenAI(
-        model=os.getenv("OPENAI_CHAT_MODEL"), api_key=os.getenv("OPENAI_API_KEY")
+        model=os.getenv("OPENAI_CHAT_MODEL"),
+        api_key=os.getenv("OPENAI_API_KEY"),
+        temperature=0,
     )
 
 
-def classify_sql_request(query: str):
-    """
-    Simple query classifier.
-    Decides whether to use
-    Structured Retrieval or NL2SQL.
-    """
+def clean_sql(sql: str) -> str:
 
-    analytics_keywords = [
-        "summary",
-        "spend",
-        "reward",
-        "international",
-        "merchant",
-        "category",
-        "billing",
-        "statement",
-        "month",
-        "compare",
-        "waiver",
+    sql = sql.strip()
+
+    sql = sql.replace("```sql", "")
+
+    sql = sql.replace("```", "")
+
+    sql = sql.strip()
+
+    sql_upper = sql.upper()
+
+    if "WITH" in sql_upper:
+
+        idx = sql_upper.find("WITH")
+
+        sql = sql[idx:]
+
+    elif "SELECT" in sql_upper:
+
+        idx = sql_upper.find("SELECT")
+
+        sql = sql[idx:]
+
+    return sql.strip()
+
+
+def validate_sql(sql: str):
+
+    sql_upper = sql.strip().upper()
+
+    allowed_prefixes = [
+        "SELECT",
+        "WITH",
     ]
 
-    query_lower = query.lower()
+    if not any(sql_upper.startswith(prefix) for prefix in allowed_prefixes):
+        raise ValueError("Only SELECT/WITH queries are allowed.")
 
-    for keyword in analytics_keywords:
+    blocked_keywords = [
+        "INSERT",
+        "UPDATE",
+        "DELETE",
+        "DROP",
+        "ALTER",
+        "TRUNCATE",
+        "CREATE",
+    ]
 
-        if keyword in query_lower:
-            return "ANALYTICS"
+    for keyword in blocked_keywords:
 
-    return "NL2SQL"
+        if keyword in sql_upper:
+
+            raise ValueError(f"{keyword} is not allowed.")
 
 
-def nl2sql(query: str):
+def validate_sql_result(result):
+
+    if result is None:
+        return False
+
+    if str(result).strip() == "":
+        return False
+
+    if str(result).strip() == "[]":
+        return False
+
+    return True
+
+
+def sql_retrieval_node(state):
+
+    print("===== NL2SQL NODE =====")
+
+    query = state["query"]
+
+    card_id = state.get("card_id")
+
+    billing_month = state.get("billing_month")
 
     db = get_sql_database()
 
-    llm = get_llm()
-
     schema = db.get_table_info()
+
+    llm = get_llm()
 
     prompt = ChatPromptTemplate.from_messages(
         [
             (
                 "system",
                 """
-                You are an expert PostgreSQL assistant.
+You are a PostgreSQL expert for a Credit Card Spend Summarizer.
 
-                Generate ONLY SELECT statements.
+Available Tables:
 
-                Rules:
-                - Return SQL only.
-                - No markdown.
-                - No explanation.
-                - No INSERT.
-                - No UPDATE.
-                - No DELETE.
-                - No DROP.
+customers
+credit_cards
+card_transactions
+reward_transactions
+billing_statements
 
-                Database Schema:
+Generate ONLY PostgreSQL SELECT statements.
 
-                {schema}
+Never generate:
+
+- INSERT
+- UPDATE
+- DELETE
+- DROP
+- ALTER
+- TRUNCATE
+- CREATE
+
+Important query types:
+
+1. Spend Summary
+2. Category Breakdown
+3. Top Merchants
+4. International Spend
+5. Reward Points
+6. Month-over-Month Comparison
+7. Fee Waiver Eligibility
+
+For Spend Summary requests, ALWAYS retrieve:
+
+- card_id
+- customer_name
+- billing_month
+- total_spend
+- total_transactions
+- category-wise spend breakdown
+- top merchants
+- international spend
+- reward points earned
+- month-over-month spend change percentage
+
+The SQL query must return enough information to populate:
+
+SpendSummaryResponse
+
+Fields:
+
+card_id
+customer_name
+billing_month
+total_spend
+total_transactions
+category_breakdown
+top_merchants
+international_spend
+reward_points_earned
+mom_change_pct
+Use the following context:
+
+card_id = {card_id}
+
+billing_month = {billing_month}
+
+Return SQL only.
+
+No markdown.
+No explanation.
+
+Database Schema:
+
+{schema}
                 """,
             ),
             (
                 "human",
                 """
-                Query:
+Question:
 
-                {query}
+{query}
                 """,
             ),
         ]
@@ -92,131 +200,38 @@ def nl2sql(query: str):
 
     chain = prompt | llm
 
-    result = chain.invoke({"schema": schema, "query": query})
+    result = chain.invoke(
+        {
+            "query": query,
+            "schema": schema,
+            "card_id": card_id,
+            "billing_month": billing_month,
+        }
+    )
 
-    sql_query = result.content.strip()
+    sql_query = clean_sql(result.content)
+    print("\n===== GENERATED SQL =====\n")
+    print(sql_query)
+
+    validate_sql(sql_query)
+
+    print("\n===== GENERATED SQL =====\n")
+    print(sql_query)
 
     sql_result = db.run(sql_query)
 
-    return {
-        "retrieval_type": "NL2SQL",
+    if not validate_sql_result(sql_result):
+
+        raise ValueError("SQL returned no data.")
+
+    sql_context = {
+        "card_id": card_id,
+        "billing_month": billing_month,
         "generated_sql": sql_query,
-        "sql_result": sql_result,
+        "query_result": sql_result,
     }
 
-
-def analytics_retrieval(card_id: str, billing_month: str,):
-
-    db = get_sql_database()
-
-    analytics_context = {}
-
-    #
-    # Total Spend
-    #
-    try:
-
-        analytics_context["total_spend"] = db.run("""
-            SELECT
-                SUM(amount)
-            FROM card_transactions
-            WHERE txn_type = 'purchase';
-            """)
-
-    except Exception as e:
-
-        analytics_context["total_spend"] = str(e)
-
-    #
-    # Top Categories
-    #
-    try:
-
-        analytics_context["top_categories"] = db.run("""
-            SELECT
-                category,
-                SUM(amount) AS spend
-            FROM card_transactions
-            GROUP BY category
-            ORDER BY spend DESC
-            LIMIT 5;
-            """)
-
-    except Exception as e:
-
-        analytics_context["top_categories"] = str(e)
-
-    #
-    # Top Merchants
-    #
-    try:
-
-        analytics_context["top_merchants"] = db.run("""
-            SELECT
-                merchant_name,
-                SUM(amount) AS spend
-            FROM card_transactions
-            GROUP BY merchant_name
-            ORDER BY spend DESC
-            LIMIT 5;
-            """)
-
-    except Exception as e:
-
-        analytics_context["top_merchants"] = str(e)
-
-    #
-    # International Spend
-    #
-    try:
-
-        analytics_context["international_spend"] = db.run("""
-            SELECT
-                COUNT(*) AS txn_count,
-                SUM(amount) AS spend
-            FROM card_transactions
-            WHERE is_international = TRUE;
-            """)
-
-    except Exception as e:
-
-        analytics_context["international_spend"] = str(e)
-
-    #
-    # Rewards
-    #
-    try:
-
-        analytics_context["reward_points"] = db.run("""
-            SELECT
-                SUM(points_earned)
-            FROM reward_transactions;
-            """)
-
-    except Exception as e:
-
-        analytics_context["reward_points"] = str(e)
-
-    return {"retrieval_type": "ANALYTICS", "analytics_context": analytics_context}
-
-
-def sql_retrieval_node(state):
-
-    print("===== SQL RETRIEVAL =====")
-
-    query = state["query"]
-
-    retrieval_type = classify_sql_request(query)
-
-    if retrieval_type == "ANALYTICS":
-
-        sql_context = analytics_retrieval(
-            card_id=state["card_id"],
-            billing_month=state["billing_month"],
-        )
-
-    else:
-
-        sql_context = nl2sql(query)
-
-    return {**state, "sql_context": sql_context}
+    return {
+        **state,
+        "sql_context": sql_context,
+    }
