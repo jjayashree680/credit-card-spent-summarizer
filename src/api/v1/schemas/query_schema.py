@@ -8,15 +8,14 @@ from typing import Optional, List
 
 class QueryRequest(BaseModel):
     query: str
+    card_id: str | None = None
+    billing_month: str | None = None
+    thread_id: str = "default"
 
 
 class QueryResponse(BaseModel):
-    query: str
     answer: str
-    policy_citations: str
-    page_no: str
-    document_name: str
-    sql_query_executed: Optional[str]
+    citations: list[str] = []
 
 
 class AIResponse(BaseModel):
