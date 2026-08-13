@@ -1,35 +1,17 @@
+from typing import Any, Dict, List, Optional
+
 from pydantic import BaseModel, Field
-from typing import Optional, List
+
+from pydantic import BaseModel
+from typing import List
 
 # ==========================
-# Query API
+# REQUEST MODELS
 # ==========================
 
 
 class QueryRequest(BaseModel):
     query: str
-    card_id: str | None = None
-    billing_month: str | None = None
-    thread_id: str = "default"
-
-
-class QueryResponse(BaseModel):
-    answer: str
-    citations: list[str] = []
-
-
-class AIResponse(BaseModel):
-    query: str = Field(description="The given query by user")
-    answer: str = Field(description="The generated response")
-    policy_citations: str
-    page_no: str
-    document_name: str
-    sql_query_executed: Optional[str]
-
-
-# ==========================
-# Spend Summary API
-# ==========================
 
 
 class SpendSummaryRequest(BaseModel):
@@ -38,44 +20,157 @@ class SpendSummaryRequest(BaseModel):
 
 
 class CategoryBreakdown(BaseModel):
+
     category: str
-    amount: float
+
     txn_count: int
-    pct_of_total: float
+
+    amount: float
 
 
-class Merchant(BaseModel):
+class TopMerchant(BaseModel):
+
     merchant_name: str
+
     amount: float
 
 
-class InternationalSpend(BaseModel):
-    amount: float
-    txn_count: int
+# ==========================
+# INTENT NODE
+# ==========================
 
 
-class RewardSummary(BaseModel):
-    points_earned: int
-    redemption_value: float
+class IntentDecision(BaseModel):
+
+    need_sql: bool = Field(description="Whether SQL retrieval is required")
+
+    need_rag: bool = Field(description="Whether RAG retrieval is required")
+
+    reason: str = Field(description="Reason for intent classification")
+
+
+# ==========================
+# SQL NODE
+# ==========================
+
+
+class SQLResponse(BaseModel):
+
+    generated_sql: str
+
+    query_result: str
+
+
+# ==========================
+# QUERY API RESPONSE
+# ==========================
+
+
+class QueryResponse(BaseModel):
+
+    query: str
+
+    answer: str
+
+    policy_citations: str
+
+    page_no: str
+
+    document_name: str
+
+    sql_query_executed: Optional[str] = None
+
+
+# ==========================
+# SUMMARISE API RESPONSE
+# ==========================
+
+
+# class SpendSummaryResponse(BaseModel):
+
+#     card_id: str
+
+#     customer_name: str
+
+#     billing_month: str
+
+#     total_spend: float
+
+#     total_transactions: int
+
+#     category_breakdown: List[Dict[str, Any]]
+
+#     top_merchants: List[Dict[str, Any]]
+
+#     international_spend: float
+
+#     reward_points_earned: int
+
+#     mom_change_pct: float
+
+#     summary_text: str
+
+#     tip: str
 
 
 class SpendSummaryResponse(BaseModel):
+
     card_id: str
+
     customer_name: str
+
     billing_month: str
 
     total_spend: float
+
     total_transactions: int
 
     category_breakdown: List[CategoryBreakdown]
-    top_merchants: List[Merchant]
 
-    international_spend: InternationalSpend
+    top_merchants: List[TopMerchant]
 
-    reward_summary: RewardSummary
+    international_spend: float
+
+    reward_points_earned: int
 
     mom_change_pct: float
 
     summary_text: str
 
     tip: str
+
+
+# ==========================
+# LLM NARRATIVE MODEL
+# ==========================
+
+
+class SpendNarrative(BaseModel):
+
+    summary_text: str
+
+    tip: str
+
+
+# ==========================
+# EVALUATION
+# ==========================
+
+
+class EvaluationResult(BaseModel):
+
+    passed: bool
+
+    reason: str
+
+
+# ==========================
+# RESPONSE GUARDRAILS
+# ==========================
+
+
+class GuardrailResult(BaseModel):
+
+    passed: bool
+
+    reason: str

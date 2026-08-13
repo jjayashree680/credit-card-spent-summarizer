@@ -22,7 +22,7 @@ from src.api.v1.tools.rerank_tool import rerank_node
 
 from src.api.v1.tools.context_builder_tool import context_builder_node
 
-from src.api.v1.schemas.query_schema import AIResponse
+from src.api.v1.schemas.query_schema import QueryResponse
 
 load_dotenv()
 
@@ -72,6 +72,9 @@ def intent_node(state: RAGState):
             5. Explain forex fees if applicable.
             6. Explain fee waiver eligibility if applicable.
             7. Provide a concise customer-friendly summary.
+            When the request is a spend summary,
+            all fields required by SpendSummaryResponse
+            must be retrievable from the generated SQL.
             """,
             ),
             (
@@ -107,7 +110,7 @@ def summary_node(state: RAGState):
 
     llm = get_llm()
 
-    structured_llm = llm.with_structured_output(AIResponse)
+    structured_llm = llm.with_structured_output(QueryResponse)
 
     prompt = ChatPromptTemplate.from_messages(
         [
@@ -125,6 +128,9 @@ def summary_node(state: RAGState):
                 5. Always provide citations.
                 6. Mention rewards, forex, fee waiver status
                    when relevant.
+                Do not use markdown tables.
+
+                Return information using plain text and bullet points.
                 """,
             ),
             (
@@ -158,32 +164,36 @@ def evaluate_node(state):
 
     print("===== EVALUATE =====")
 
-    response = state["response"]
+    response = state.get("response", {})
 
     answer = response.get("answer", "")
 
     sql_context = state.get("sql_context", {})
 
-    passed = True
+    reranked_docs = state.get("reranked_docs", [])
 
-    reason = "Validation Passed"
+    checks = []
 
-    if len(answer.strip()) < 20:
+    checks.append(len(answer.strip()) > 20)
 
-        passed = False
+    checks.append(bool(sql_context))
 
-        reason = "Answer too short"
+    checks.append(len(reranked_docs) > 0)
+    checks.append(bool(sql_context.get("generated_sql")))
 
-    if not sql_context:
+    passed = all(checks)
 
-        passed = False
+    reason = "Validation Passed" if passed else "Validation Failed"
 
-        reason = "SQL context missing"
+    return {
+        **state,
+        "evaluation_result": {
+            "passed": passed,
+            "reason": reason,
+        },
+    }  # ---------------------------------------------------------
 
-    return {**state, "evaluation_result": {"passed": passed, "reason": reason}}
 
-
-# ---------------------------------------------------------
 # CONDITIONAL EDGE
 # ---------------------------------------------------------
 

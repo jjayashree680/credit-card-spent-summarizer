@@ -9,22 +9,16 @@ from src.api.v1.agents.credit_card_agent import (
     run_credit_card_agent,
 )
 
-
 router = APIRouter(
     prefix="/api/v1/query",
-    tags=["Credit Card Query"],
+    tags=["Query"],
 )
 
 
-@router.post("/", response_model=QueryResponse)
+@router.post(
+    "/",
+    response_model=QueryResponse,
+)
 def query_documents(request: QueryRequest):
 
-    response = run_credit_card_agent(
-        query=request.query,
-        card_id=request.card_id,
-        billing_month=request.billing_month,
-        thread_id=request.thread_id,
-    )
-
-    return response
-
+    return run_credit_card_agent(query=request.query)
