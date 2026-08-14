@@ -193,6 +193,50 @@ User Query:
         }
 
     # --------------------------
+    # MISSING CARD DETAILS
+    # --------------------------
+
+    query_lower = state["query"].lower()
+
+    needs_card_context = any(
+        keyword in query_lower
+        for keyword in [
+            "spend",
+            "transaction",
+            "reward",
+            "statement",
+            "billing",
+            "fee waiver",
+            "top merchant",
+            "international",
+        ]
+    )
+
+    if (
+        decision.query_type == "credit_card"
+        and needs_card_context
+        and not decision.card_id
+    ):
+
+        return {
+            **state,
+            "response": {
+                "query": state["query"],
+                "answer": (
+                    "Please provide a card ID so that I can "
+                    "retrieve the requested spending information."
+                ),
+                "policy_citations": "",
+                "page_no": "",
+                "document_name": "",
+                "sql_query_executed": None,
+            },
+        }
+    # --------------------------
+    # CREDIT CARD QUERY
+    # --------------------------
+
+    # --------------------------
     # CREDIT CARD QUERY
     # --------------------------
 
