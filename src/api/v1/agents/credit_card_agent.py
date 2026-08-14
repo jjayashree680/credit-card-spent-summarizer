@@ -6,6 +6,8 @@ from typing import Literal
 
 from pydantic import BaseModel
 
+from typing import Optional, Literal
+
 from langchain_openai import ChatOpenAI
 from langchain_core.prompts import ChatPromptTemplate
 from langgraph.graph import StateGraph, END
@@ -41,6 +43,12 @@ def get_llm():
 
 class IntentDecision(BaseModel):
 
+    query_type: str
+
+    card_id: Optional[str] = None
+
+    billing_month: Optional[str] = None
+
     need_sql: bool
 
     need_rag: bool
@@ -61,31 +69,72 @@ def intent_node(state: RAGState):
             (
                 "system",
                 """
-            You are a Credit Card Spend Analyst.
+You are a Credit Card Spend Assistant.
 
-            Rules:
+Classify every query into one of:
 
-            1. SQL context is the source of truth.
-            2. Never invent numbers.
-            3. Use KB context only for policy explanations.
-            4. Explain rewards.
-            5. Explain forex fees if applicable.
-            6. Explain fee waiver eligibility if applicable.
-            7. Provide a concise customer-friendly summary.
-            When the request is a spend summary,
-            all fields required by SpendSummaryResponse
-            must be retrievable from the generated SQL.
-            """,
+1. credit_card
+   - transactions
+   - rewards
+   - fee waiver
+   - billing statements
+   - spend summary
+   - international spend
+   - category spend
+   - top merchants
+   - card policies
+
+2. chitchat
+   - hi
+   - hello
+   - good morning
+   - good evening
+   - thank you
+   - bye
+   - how are you
+
+3. out_of_scope
+   - cooking
+   - recipes
+   - sports
+   - politics
+   - weather
+   - coding
+   - movies
+   - travel planning
+   - anything unrelated to credit cards
+
+If the user provides a card id or billing month,
+extract them.
+
+Examples:
+
+User:
+Summarise spend details on card id C00014 and month March 2026
+
+card_id = C00014
+billing_month = 2026-03
+
+User:
+Show transactions for CC-881001
+
+card_id = CC-881001
+billing_month = null
+
+Rules:
+
+- credit_card -> need_sql and/or need_rag as required
+- chitchat -> need_sql=False, need_rag=False
+- out_of_scope -> need_sql=False, need_rag=False
+                """,
             ),
             (
                 "human",
                 """
-            Question:
+User Query:
 
-            {query}
-
-         
-            """,
+{query}
+                """,
             ),
         ]
     )
@@ -96,7 +145,63 @@ def intent_node(state: RAGState):
 
     print(decision)
 
-    return {**state, "intent": decision.model_dump()}
+    # --------------------------
+    # CHITCHAT
+    # --------------------------
+
+    if decision.query_type == "chitchat":
+
+        return {
+            **state,
+            "response": {
+                "query": state["query"],
+                "answer": (
+                    "Hello! I'm your Credit Card Spend Assistant. "
+                    "I can help with spending analysis, rewards, "
+                    "transactions, billing statements, fee waiver "
+                    "eligibility and international spend."
+                ),
+                "policy_citations": "",
+                "page_no": "",
+                "document_name": "",
+                "sql_query_executed": None,
+            },
+        }
+
+    # --------------------------
+    # OUT OF SCOPE
+    # --------------------------
+
+    if decision.query_type == "out_of_scope":
+
+        return {
+            **state,
+            "response": {
+                "query": state["query"],
+                "answer": (
+                    "I'm specifically designed to assist with "
+                    "credit card spending analysis, rewards, "
+                    "transactions, billing statements and "
+                    "card-related policies. "
+                    "I cannot assist with unrelated topics."
+                ),
+                "policy_citations": "",
+                "page_no": "",
+                "document_name": "",
+                "sql_query_executed": None,
+            },
+        }
+
+    # --------------------------
+    # CREDIT CARD QUERY
+    # --------------------------
+
+    return {
+        **state,
+        "card_id": decision.card_id or state.get("card_id"),
+        "billing_month": (decision.billing_month or state.get("billing_month")),
+        "intent": decision.model_dump(),
+    }
 
 
 # ---------------------------------------------------------
@@ -152,7 +257,11 @@ def summary_node(state: RAGState):
         {"query": state["query"], "context": state["final_context"]}
     )
 
-    return {**state, "response": response.model_dump()}
+    return {
+        **state,
+        "response": response.model_dump(),
+        "retry_count": state.get("retry_count", 0) + 1,
+    }
 
 
 # ---------------------------------------------------------
@@ -165,33 +274,36 @@ def evaluate_node(state):
     print("===== EVALUATE =====")
 
     response = state.get("response", {})
-
     answer = response.get("answer", "")
 
     sql_context = state.get("sql_context", {})
-
     reranked_docs = state.get("reranked_docs", [])
+
+    intent = state.get("intent", {})
+
+    need_sql = intent.get("need_sql", False)
+    need_rag = intent.get("need_rag", False)
 
     checks = []
 
     checks.append(len(answer.strip()) > 20)
 
-    checks.append(bool(sql_context))
+    if need_sql:
+        checks.append(bool(sql_context))
+        checks.append(bool(sql_context.get("generated_sql")))
 
-    checks.append(len(reranked_docs) > 0)
-    checks.append(bool(sql_context.get("generated_sql")))
+    if need_rag:
+        checks.append(len(reranked_docs) > 0)
 
     passed = all(checks)
-
-    reason = "Validation Passed" if passed else "Validation Failed"
 
     return {
         **state,
         "evaluation_result": {
             "passed": passed,
-            "reason": reason,
+            "reason": ("Validation Passed" if passed else "Validation Failed"),
         },
-    }  # ---------------------------------------------------------
+    }
 
 
 # CONDITIONAL EDGE
@@ -204,10 +316,31 @@ def evaluation_router(state: RAGState):
 
     retry_count = state["retry_count"]
 
+    print(f"passed={evaluation['passed']} " f"retry_count={retry_count}")
+
     if evaluation["passed"] is False and retry_count < 2:
         return "retry"
 
     return "pass"
+
+
+def intent_router(state: RAGState):
+
+    if state.get("response"):
+        return "end"
+
+    intent = state.get("intent", {})
+
+    need_sql = intent.get("need_sql", False)
+    need_rag = intent.get("need_rag", False)
+
+    if need_sql:
+        return "sql"
+
+    if need_rag:
+        return "rag"
+
+    return "end"
 
 
 # ---------------------------------------------------------
@@ -237,8 +370,15 @@ def build_credit_card_graph():
 
     workflow.set_entry_point("intent")
 
-    workflow.add_edge("intent", "sql_retrieval")
-
+    workflow.add_conditional_edges(
+        "intent",
+        intent_router,
+        {
+            "sql": "sql_retrieval",
+            "rag": "hybrid_search",
+            "end": END,
+        },
+    )
     workflow.add_edge("sql_retrieval", "hybrid_search")
 
     workflow.add_edge("hybrid_search", "rerank")
