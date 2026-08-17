@@ -12,7 +12,8 @@ from langchain_openai import ChatOpenAI
 from langchain_core.prompts import ChatPromptTemplate
 from langgraph.graph import StateGraph, END
 from langgraph.checkpoint.memory import MemorySaver
-from src.api.v1.tools.guardrails_tool import guardrails_node
+
+# from src.api.v1.tools.guardrails_tool import guardrails_node
 
 from src.api.v1.states.rag_state import RAGState
 
@@ -43,7 +44,12 @@ def get_llm():
 
 class IntentDecision(BaseModel):
 
-    query_type: str
+    # query_type: str
+    query_type: Literal[
+        "credit_card",
+        "chitchat",
+        "out_of_scope",
+    ]
 
     card_id: Optional[str] = None
 
@@ -198,17 +204,30 @@ User Query:
 
     query_lower = state["query"].lower()
 
+    # needs_card_context = any(
+    #     keyword in query_lower
+    #     for keyword in [
+    #         "spend",
+    #         "transaction",
+    #         "reward",
+    #         "statement",
+    #         "billing",
+    #         "fee waiver",
+    #         "top merchant",
+    #         "international",
+    #     ]
+    # )
     needs_card_context = any(
         keyword in query_lower
         for keyword in [
-            "spend",
-            "transaction",
-            "reward",
-            "statement",
-            "billing",
-            "fee waiver",
-            "top merchant",
-            "international",
+            "my spend",
+            "my transactions",
+            "my rewards",
+            "what did i spend",
+            "show my transactions",
+            "my billing statement",
+            "my card",
+            "top merchant on my card",
         ]
     )
 
@@ -410,7 +429,7 @@ def build_credit_card_graph():
 
     workflow.add_node("evaluate", evaluate_node)
 
-    workflow.add_node("guardrails", guardrails_node)
+    # workflow.add_node("guardrails", guardrails_node)
 
     workflow.set_entry_point("intent")
 
@@ -438,11 +457,9 @@ def build_credit_card_graph():
         evaluation_router,
         {
             "retry": "summary",
-            "pass": "guardrails",
+            "pass": END,
         },
     )
-
-    workflow.add_edge("guardrails", END)
 
     memory = MemorySaver()
 
