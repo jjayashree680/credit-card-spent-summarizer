@@ -70,16 +70,11 @@ class IntentDecision(BaseModel):
 
     reason: str
 
+
 def extract_user_name(query: str):
-    """
-    Extract user name from:
-    I am Fathima
-    I'm Fathima
-    My name is Fathima
-    """
 
     match = re.search(
-        r"(?:i am|i'm|my name is)\s+([A-Za-z]+)",
+        r"(?:i am|i'm|my name is|this is|call me)\s+([A-Za-z]+)",
         query,
         re.IGNORECASE,
     )
@@ -88,6 +83,7 @@ def extract_user_name(query: str):
         return match.group(1)
 
     return None
+
 
 def conversational_node(state: RAGState):
 
@@ -99,6 +95,7 @@ def conversational_node(state: RAGState):
     query_type = intent.get("query_type", "")
 
     user_name = state.get("user_name")
+    print("USER NAME =", state.get("user_name"))
 
     lower_query = query.lower().strip()
 
@@ -106,10 +103,7 @@ def conversational_node(state: RAGState):
     # Remember user identity
     # --------------------------------------------------
 
-    if (
-        "who am i" in lower_query
-        or "what is my name" in lower_query
-    ):
+    if "who am i" in lower_query or "what is my name" in lower_query:
         if user_name:
             answer = f"You're {user_name}!"
         else:
@@ -179,22 +173,15 @@ Rules:
 - Use the user's name when appropriate.
 - If user already told their name, remember it.
 - Do not bring up credit cards unless user asks.
-"""
+""",
             ),
-            (
-                "human",
-                "{query}"
-            ),
+            ("human", "{query}"),
         ]
     )
 
     chain = prompt | llm
 
-    response = chain.invoke(
-        {
-            "query": query
-        }
-    )
+    response = chain.invoke({"query": query})
 
     return {
         **state,
@@ -207,7 +194,8 @@ Rules:
             "sql_query_executed": None,
         },
     }
-    
+
+
 def intent_node(state: RAGState):
 
     print("=== INTENT NODE ===")
@@ -363,10 +351,13 @@ Rules:
             (
                 "human",
                 """
-User Query:
+Conversation History:
 
-{query}
-                """,
+{chat_history}
+
+Current User Query:
+
+{query}                """,
             ),
         ]
     )
@@ -375,9 +366,43 @@ User Query:
 
     decision = chain.invoke(
         {
-            "query": state["query"]
+            "query": state["query"],
+            "chat_history": state.get(
+                "chat_history",
+                [],
+            ),
         }
     )
+    card_id = decision.card_id
+
+    billing_month = decision.billing_month
+
+    history = state.get("chat_history", [])
+
+    # Recover card id from previous conversation
+
+    if not card_id:
+
+        for message in reversed(history):
+
+            content = message.get("content", "")
+
+            match = re.search(
+                r"CC-\d+",
+                content,
+                re.IGNORECASE,
+            )
+
+            if match:
+
+                card_id = match.group()
+
+                print(
+                    "RECOVERED CARD ID =",
+                    card_id,
+                )
+
+                break
 
     print("RETRIEVAL TYPE =", decision.retrieval_type)
 
@@ -420,14 +445,39 @@ User Query:
     #     }
     user_name = state.get("user_name")
 
-    detected_name = extract_user_name(state["query"])
+    if not user_name:
 
-    if detected_name:
-        user_name= detected_name
+        history = state.get("chat_history", [])
 
+        print("CHAT HISTORY =", history)
+
+        for message in reversed(history):
+
+            if message["role"] != "user":
+                continue
+
+            detected = extract_user_name(message["content"])
+
+            if detected:
+
+                print("FOUND NAME IN HISTORY =", detected)
+
+                user_name = detected
+
+                break
+
+    print("FINAL USER NAME =", user_name)
+
+    # detected_name = extract_user_name(state["query"])
+
+    # if detected_name:
+    #     user_name = detected_name
+    # print("DETECTED NAME =", detected_name)
+    # print("CURRENT USER NAME =", user_name)
+    print("CHAT HISTORY =", state.get("chat_history"))
     if decision.query_type == "chitchat":
         return {
-           **state,
+            **state,
             "intent": intent_data,
             "user_name": user_name,
         }
@@ -474,9 +524,7 @@ User Query:
 
         return {
             **state,
-
             "intent": intent_data,
-
             "response": {
                 "query": state["query"],
                 "answer": (
@@ -493,17 +541,18 @@ User Query:
     # =====================================================
     # CREDIT CARD QUERY CONTINUES TO SQL/RAG
     # =====================================================
-
+    print(
+        "FINAL CARD ID =",
+        card_id,
+    )
     return {
         **state,
         "user_name": user_name,
-        "card_id": decision.card_id or state.get("card_id"),
-        "billing_month": (
-            decision.billing_month
-            or state.get("billing_month")
-        ),
+        "card_id": card_id or state.get("card_id"),
+        "billing_month": (decision.billing_month or state.get("billing_month")),
         "intent": intent_data,
     }
+
 
 # ---------------------------------------------------------
 # SUMMARY NODE
@@ -542,7 +591,10 @@ def summary_node(state: RAGState):
             (
                 "human",
                 """
-                User Query:
+                Conversation History:
+                {chat_history}
+
+                Current User Query:
                 {query}
 
                 Context:
@@ -555,7 +607,14 @@ def summary_node(state: RAGState):
     chain = prompt | structured_llm
 
     response = chain.invoke(
-        {"query": state["query"], "context": state["final_context"]}
+        {
+            "query": state["query"],
+            "context": state["final_context"],
+            "chat_history": state.get(
+                "chat_history",
+                [],
+            ),
+        }
     )
 
     return {
@@ -611,11 +670,29 @@ def evaluate_node(state):
 # ---------------------------------------------------------
 
 
+# def evaluation_router(state: RAGState):
+
+#     evaluation = state["evaluation_result"]
+
+#     retry_count = state["retry_count"]
+
+#     print(f"passed={evaluation['passed']} " f"retry_count={retry_count}")
+
+#     if evaluation["passed"] is False and retry_count < 2:
+#         return "retry"
+
+#     return "pass"
+
+
 def evaluation_router(state: RAGState):
 
-    evaluation = state["evaluation_result"]
+    evaluation = state.get("evaluation_result")
 
-    retry_count = state["retry_count"]
+    if not evaluation:
+        print("evaluation_result missing")
+        return "pass"
+
+    retry_count = state.get("retry_count", 0)
 
     print(f"passed={evaluation['passed']} " f"retry_count={retry_count}")
 
@@ -776,6 +853,7 @@ def run_credit_card_agent(
     card_id: str | None = None,
     billing_month: str | None = None,
     thread_id: str = "default",
+    chat_history: list | None = None,
 ):
 
     initial_state = {
@@ -791,6 +869,7 @@ def run_credit_card_agent(
         "final_context": "",
         "response": {},
         "retry_count": 0,
+        "chat_history": chat_history or [],
     }
 
     final_state = credit_card_graph.invoke(

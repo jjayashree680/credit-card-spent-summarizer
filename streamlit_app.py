@@ -1,6 +1,6 @@
 import requests
 import streamlit as st
-
+import uuid
 
 API_URL = "http://127.0.0.1:8000/api/v1/query/"
 
@@ -43,7 +43,7 @@ with st.sidebar:
         st.session_state.messages = []
 
         # Optional: reset conversation thread
-        st.session_state.thread_id = "streamlit-user"
+        st.session_state.thread_id = str(uuid.uuid4())
 
         st.rerun()
 
@@ -52,9 +52,9 @@ with st.sidebar:
 # THREAD ID
 # ---------------------------------------------------------
 
-if "thread_id" not in st.session_state:
-    st.session_state.thread_id = "streamlit-user"
 
+if "thread_id" not in st.session_state:
+    st.session_state.thread_id = str(uuid.uuid4())
 
 # ---------------------------------------------------------
 # DISPLAY CHAT HISTORY
@@ -70,9 +70,7 @@ for message in st.session_state.messages:
 # USER INPUT
 # ---------------------------------------------------------
 
-query = st.chat_input(
-    "Ask about your credit card spending..."
-)
+query = st.chat_input("Ask about your credit card spending...")
 
 
 # ---------------------------------------------------------
@@ -103,6 +101,8 @@ if query:
                     API_URL,
                     json={
                         "query": query,
+                        "thread_id": st.session_state.thread_id,
+                        "chat_history": st.session_state.messages,
                     },
                     timeout=120,
                 )
@@ -128,8 +128,7 @@ if query:
                 else:
 
                     st.error(
-                        f"API Error: {response.status_code}\n\n"
-                        f"{response.text}"
+                        f"API Error: {response.status_code}\n\n" f"{response.text}"
                     )
 
             except requests.exceptions.ConnectionError:
@@ -141,12 +140,8 @@ if query:
 
             except requests.exceptions.Timeout:
 
-                st.error(
-                    "The request timed out. Please try again."
-                )
+                st.error("The request timed out. Please try again.")
 
             except Exception as e:
 
-                st.error(
-                    f"Unexpected error: {e}"
-                )
+                st.error(f"Unexpected error: {e}")

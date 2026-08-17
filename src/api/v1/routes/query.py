@@ -57,7 +57,11 @@ def query_endpoint(
 
     try:
 
-        return query_documents(request.query)
+        return query_documents(
+            query=request.query,
+            thread_id=request.thread_id,
+            chat_history=request.chat_history,
+        )
 
     except GuardrailViolation as violation:
 

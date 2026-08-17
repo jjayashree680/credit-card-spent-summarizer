@@ -2,6 +2,7 @@ from typing import TypedDict, Optional
 
 
 class RAGState(TypedDict, total=False):
+
     query: str
 
     card_id: Optional[str]
@@ -12,6 +13,7 @@ class RAGState(TypedDict, total=False):
     user_name: Optional[str]
 
     sql_context: dict
+
     vector_docs: list
     fts_docs: list
     hybrid_docs: list
@@ -22,3 +24,6 @@ class RAGState(TypedDict, total=False):
     response: dict
 
     retry_count: int
+    chat_history: list
+
+    evaluation_result: dict

@@ -1,4 +1,4 @@
-from typing import Any, Dict, List, Optional,Literal
+from typing import Any, Dict, List, Optional, Literal
 
 from pydantic import BaseModel, Field
 
@@ -13,6 +13,8 @@ from typing import List
 
 class QueryRequest(BaseModel):
     query: str
+    thread_id: str | None = None
+    chat_history: list | None = None
 
 
 class SpendSummaryRequest(BaseModel):
