@@ -1,4 +1,43 @@
-from fastapi import APIRouter
+# from fastapi import APIRouter
+
+# from src.api.v1.schemas.query_schema import (
+#     SpendSummaryRequest,
+#     SpendSummaryResponse,
+# )
+
+# from src.api.v1.services.spend_summary_service import (
+#     summarise_card_spend,
+# )
+
+# router = APIRouter(
+#     prefix="/api/v1/summarise",
+#     tags=["Credit Card Spend Summary"],
+# )
+
+
+# @router.post(
+#     "/",
+#     response_model=SpendSummaryResponse,
+# )
+# def summarise_endpoint(
+#     request: SpendSummaryRequest,
+# ) -> SpendSummaryResponse:
+
+#     response = summarise_card_spend(
+#         card_id=request.card_id,
+#         billing_month=request.billing_month,
+#     )
+
+#     return response
+
+from fastapi import (
+    APIRouter,
+    HTTPException,
+)
+
+from src.core.guardrails import (
+    GuardrailViolation,
+)
 
 from src.api.v1.schemas.query_schema import (
     SpendSummaryRequest,
@@ -23,9 +62,19 @@ def summarise_endpoint(
     request: SpendSummaryRequest,
 ) -> SpendSummaryResponse:
 
-    response = summarise_card_spend(
-        card_id=request.card_id,
-        billing_month=request.billing_month,
-    )
+    try:
 
-    return response
+        return summarise_card_spend(
+            card_id=request.card_id,
+            billing_month=request.billing_month,
+        )
+
+    except GuardrailViolation as violation:
+
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "guardrail": violation.guard,
+                "message": violation.message,
+            },
+        )
