@@ -20,8 +20,11 @@ from src.api.v1.states.rag_state import RAGState
 from src.api.v1.tools.sql_retrieval_tool import sql_retrieval_node
 
 from src.api.v1.tools.hybrid_search_tool import hybrid_search_node
+from src.api.v1.tools.fts_search_tool import fts_search_node
+from src.api.v1.tools.vector_search_tool import vector_search_node
 
 from src.api.v1.tools.rerank_tool import rerank_node
+
 
 from src.api.v1.tools.context_builder_tool import context_builder_node
 
@@ -44,12 +47,17 @@ def get_llm():
 
 class IntentDecision(BaseModel):
 
-    # query_type: str
     query_type: Literal[
         "credit_card",
         "chitchat",
         "out_of_scope",
     ]
+
+    retrieval_type: Literal[
+        "vector",
+        "fts",
+        "hybrid",
+    ] = "hybrid"
 
     card_id: Optional[str] = None
 
@@ -110,6 +118,32 @@ Classify every query into one of:
    - travel planning
    - anything unrelated to credit cards
 
+For retrieval_type:
+
+Use "fts" when:
+- query contains exact policy terms
+- annual membership fee
+- fee waiver eligibility
+- forex markup fee
+- minimum amount due
+- billing cycle
+- cash withdrawal limit
+
+Use "vector" when:
+- query is conceptual
+- query is paraphrased
+- query asks "how", "why", "explain"
+
+Use "hybrid" when:
+- both semantic understanding and keyword matching are beneficial
+
+Return:
+query_type
+retrieval_type
+need_sql
+need_rag
+reason
+
 If the user provides a card id or billing month,
 extract them.
 
@@ -148,6 +182,8 @@ User Query:
     chain = prompt | structured_llm
 
     decision = chain.invoke({"query": state["query"]})
+
+    print("RETRIEVAL TYPE =", decision.retrieval_type)
 
     print(decision)
 
@@ -265,6 +301,32 @@ User Query:
         "billing_month": (decision.billing_month or state.get("billing_month")),
         "intent": decision.model_dump(),
     }
+
+
+# def vector_search_node(state: RAGState):
+
+#     print("=== VECTOR SEARCH ===")
+
+#     vector_docs = vector_search(state["query"])
+
+#     return {
+#         **state,
+#         "vector_docs": vector_docs,
+#         "hybrid_docs": vector_docs,
+#     }
+
+
+# def fts_search_node(state: RAGState):
+
+#     print("=== FTS SEARCH ===")
+
+#     fts_docs = fts_search(state["query"])
+
+#     return {
+#         **state,
+#         "fts_docs": fts_docs,
+#         "hybrid_docs": fts_docs,
+#     }
 
 
 # ---------------------------------------------------------
@@ -397,11 +459,16 @@ def intent_router(state: RAGState):
     need_sql = intent.get("need_sql", False)
     need_rag = intent.get("need_rag", False)
 
+    retrieval_type = intent.get(
+        "retrieval_type",
+        "hybrid",
+    )
+
     if need_sql:
         return "sql"
 
     if need_rag:
-        return "rag"
+        return retrieval_type
 
     return "end"
 
@@ -418,8 +485,22 @@ def build_credit_card_graph():
     workflow.add_node("intent", intent_node)
 
     workflow.add_node("sql_retrieval", sql_retrieval_node)
+    workflow.add_node(
+        "vector_search",
+        vector_search_node,
+    )
 
-    workflow.add_node("hybrid_search", hybrid_search_node)
+    workflow.add_node(
+        "fts_search",
+        fts_search_node,
+    )
+
+    workflow.add_node(
+        "hybrid_search",
+        hybrid_search_node,
+    )
+
+    # workflow.add_node("hybrid_search", hybrid_search_node)
 
     workflow.add_node("rerank", rerank_node)
 
@@ -438,13 +519,29 @@ def build_credit_card_graph():
         intent_router,
         {
             "sql": "sql_retrieval",
-            "rag": "hybrid_search",
+            "vector": "vector_search",
+            "fts": "fts_search",
+            "hybrid": "hybrid_search",
             "end": END,
         },
     )
     workflow.add_edge("sql_retrieval", "hybrid_search")
+    workflow.add_edge(
+        "vector_search",
+        "rerank",
+    )
 
-    workflow.add_edge("hybrid_search", "rerank")
+    workflow.add_edge(
+        "fts_search",
+        "rerank",
+    )
+
+    workflow.add_edge(
+        "hybrid_search",
+        "rerank",
+    )
+
+    # workflow.add_edge("hybrid_search", "rerank")
 
     workflow.add_edge("rerank", "context_builder")
 
