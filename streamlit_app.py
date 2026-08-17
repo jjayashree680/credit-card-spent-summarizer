@@ -29,30 +29,31 @@ if "messages" not in st.session_state:
 
 
 # ---------------------------------------------------------
-# SAMPLE QUESTIONS
+# SIDEBAR
 # ---------------------------------------------------------
 
 with st.sidebar:
 
-    st.header("Sample Queries")
+    st.header("Chat")
 
-    sample_queries = [
-        "Summarise my spending for March 2026 on card CC-881001",
-        "What did I spend the most on last month?",
-        "How much did I spend internationally this billing cycle?",
-        "Compare my spending this month vs last month",
-        "How many reward points did I earn this month and what is their value?",
-        "Am I on track to meet the annual fee waiver threshold?",
-    ]
+    if st.button(
+        "🗑️ Clear Chat",
+        use_container_width=True,
+    ):
+        st.session_state.messages = []
 
-    for sample in sample_queries:
+        # Optional: reset conversation thread
+        st.session_state.thread_id = "streamlit-user"
 
-        if st.button(
-            sample,
-            key=sample,
-            use_container_width=True,
-        ):
-            st.session_state.selected_query = sample
+        st.rerun()
+
+
+# ---------------------------------------------------------
+# THREAD ID
+# ---------------------------------------------------------
+
+if "thread_id" not in st.session_state:
+    st.session_state.thread_id = "streamlit-user"
 
 
 # ---------------------------------------------------------
@@ -69,19 +70,9 @@ for message in st.session_state.messages:
 # USER INPUT
 # ---------------------------------------------------------
 
-selected_query = st.session_state.get(
-    "selected_query",
-    "",
-)
-
 query = st.chat_input(
     "Ask about your credit card spending..."
 )
-
-
-if selected_query:
-    query = selected_query
-    st.session_state.selected_query = ""
 
 
 # ---------------------------------------------------------
@@ -90,6 +81,7 @@ if selected_query:
 
 if query:
 
+    # Show user message
     st.session_state.messages.append(
         {
             "role": "user",
@@ -100,9 +92,10 @@ if query:
     with st.chat_message("user"):
         st.markdown(query)
 
+    # Assistant
     with st.chat_message("assistant"):
 
-        with st.spinner("Analyzing your spending..."):
+        with st.spinner("Thinking..."):
 
             try:
 
@@ -110,7 +103,6 @@ if query:
                     API_URL,
                     json={
                         "query": query,
-                        "thread_id": "streamlit-user",
                     },
                     timeout=120,
                 )
@@ -121,7 +113,7 @@ if query:
 
                     answer = result.get(
                         "answer",
-                        str(result),
+                        "I couldn't generate a response.",
                     )
 
                     st.markdown(answer)
@@ -135,12 +127,10 @@ if query:
 
                 else:
 
-                    error_message = (
+                    st.error(
                         f"API Error: {response.status_code}\n\n"
                         f"{response.text}"
                     )
-
-                    st.error(error_message)
 
             except requests.exceptions.ConnectionError:
 
@@ -152,8 +142,7 @@ if query:
             except requests.exceptions.Timeout:
 
                 st.error(
-                    "The request timed out. "
-                    "Please try again."
+                    "The request timed out. Please try again."
                 )
 
             except Exception as e:

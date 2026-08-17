@@ -1,4 +1,5 @@
 import os
+import re
 
 from dotenv import load_dotenv
 
@@ -69,7 +70,144 @@ class IntentDecision(BaseModel):
 
     reason: str
 
+def extract_user_name(query: str):
+    """
+    Extract user name from:
+    I am Fathima
+    I'm Fathima
+    My name is Fathima
+    """
 
+    match = re.search(
+        r"(?:i am|i'm|my name is)\s+([A-Za-z]+)",
+        query,
+        re.IGNORECASE,
+    )
+
+    if match:
+        return match.group(1)
+
+    return None
+
+def conversational_node(state: RAGState):
+
+    print("=== CONVERSATIONAL NODE ===")
+
+    query = state["query"]
+
+    intent = state.get("intent", {})
+    query_type = intent.get("query_type", "")
+
+    user_name = state.get("user_name")
+
+    lower_query = query.lower().strip()
+
+    # --------------------------------------------------
+    # Remember user identity
+    # --------------------------------------------------
+
+    if (
+        "who am i" in lower_query
+        or "what is my name" in lower_query
+    ):
+        if user_name:
+            answer = f"You're {user_name}!"
+        else:
+            answer = (
+                "I don't know your name yet. "
+                "You can tell me by saying "
+                "'I am <your name>'."
+            )
+
+        return {
+            **state,
+            "response": {
+                "query": query,
+                "answer": answer,
+                "policy_citations": "",
+                "page_no": "",
+                "document_name": "",
+                "sql_query_executed": None,
+            },
+        }
+
+    # --------------------------------------------------
+    # Out of Scope
+    # --------------------------------------------------
+
+    if query_type == "out_of_scope":
+
+        answer = (
+            "I'm specifically designed to assist with "
+            "credit card spending analysis, rewards, "
+            "transactions, billing statements and "
+            "card-related policies."
+        )
+
+        return {
+            **state,
+            "response": {
+                "query": query,
+                "answer": answer,
+                "policy_citations": "",
+                "page_no": "",
+                "document_name": "",
+                "sql_query_executed": None,
+            },
+        }
+
+    # --------------------------------------------------
+    # Chit Chat
+    # --------------------------------------------------
+
+    llm = get_llm()
+
+    prompt = ChatPromptTemplate.from_messages(
+        [
+            (
+                "system",
+                f"""
+You are a friendly conversational assistant.
+
+Known user name:
+{user_name}
+
+Rules:
+- Be warm and friendly.
+- Keep response concise.
+- Do not repeat introductions.
+- Use the user's name when appropriate.
+- If user already told their name, remember it.
+- Do not bring up credit cards unless user asks.
+"""
+            ),
+            (
+                "human",
+                "{query}"
+            ),
+        ]
+    )
+
+    chain = prompt | llm
+
+    response = chain.invoke(
+        {
+            "query": query
+        }
+    )
+
+    return {
+        **state,
+        "response": {
+            "query": query,
+            "answer": response.content,
+            "policy_citations": "",
+            "page_no": "",
+            "document_name": "",
+            "sql_query_executed": None,
+        },
+    }
+    
 def intent_node(state: RAGState):
 
     print("=== INTENT NODE ===")
@@ -85,38 +223,57 @@ def intent_node(state: RAGState):
                 """
 You are a Credit Card Spend Assistant.
 
-Classify every query into one of:
+Classify every user query into exactly one of:
 
 1. credit_card
-   - transactions
-   - rewards
-   - fee waiver
-   - billing statements
-   - spend summary
-   - international spend
-   - category spend
-   - top merchants
-   - card policies
+
+Use credit_card for questions related to:
+
+- transactions
+- rewards
+- reward points
+- fee waiver
+- billing statements
+- spend summary
+- international spend
+- category spend
+- top merchants
+- card policies
+- card details
+- spending comparisons
+- credit card charges
 
 2. chitchat
-   - hi
-   - hello
-   - good morning
-   - good evening
-   - thank you
-   - bye
-   - how are you
+
+Use chitchat for normal conversation such as:
+
+- hi
+- hello
+- hey
+- hi there
+- how are you
+- how r you
+- how are u
+- good morning
+- good afternoon
+- good evening
+- thanks
+- thank you
+- bye
+- see you
+- help me
+- can you help me
+- i am Fathima
+- my name is Fathima
+- nice to meet you
+- what can you do
+- what are you doing
+- who are you
+- how is your day
+
+These should NOT require SQL or RAG.
 
 3. out_of_scope
-   - cooking
-   - recipes
-   - sports
-   - politics
-   - weather
-   - coding
-   - movies
-   - travel planning
-   - anything unrelated to credit cards
 
 For retrieval_type:
 
@@ -146,6 +303,41 @@ reason
 
 If the user provides a card id or billing month,
 extract them.
+Use out_of_scope for requests unrelated to the credit card assistant, including:
+
+- cooking
+- recipes
+- chocolate recipes
+- sports
+- politics
+- weather
+- coding
+- movies
+- travel planning
+- general programming
+- how to attack someone
+- how to hurt someone
+- requests to harm another person
+- other unrelated requests
+
+These should NOT require SQL or RAG.
+
+IMPORTANT:
+
+A casual statement such as:
+
+"I am Fathima"
+"My name is Fathima"
+
+is chitchat.
+
+A question such as:
+
+"Who am I?"
+
+is also chitchat unless the user is explicitly asking for a verified customer identity lookup.
+
+If the user provides a card ID or billing month, extract them.
 
 Examples:
 
@@ -181,82 +373,88 @@ User Query:
 
     chain = prompt | structured_llm
 
-    decision = chain.invoke({"query": state["query"]})
+    decision = chain.invoke(
+        {
+            "query": state["query"]
+        }
+    )
 
     print("RETRIEVAL TYPE =", decision.retrieval_type)
 
     print(decision)
 
-    # --------------------------
+    # =====================================================
+    # IMPORTANT
+    # ALWAYS SAVE INTENT INTO STATE
+    # =====================================================
+
+    intent_data = decision.model_dump()
+
+    print(f"Saved intent: {intent_data}")
+
+    # =====================================================
     # CHITCHAT
-    # --------------------------
+    # =====================================================
+
+    # if decision.query_type == "chitchat":
+
+    #     return {
+    #         **state,
+
+    #         # THIS WAS MISSING
+    #         "intent": intent_data,
+
+    #         "response": {
+    #             "query": state["query"],
+    #             "answer": (
+    #                 "Hello! I'm your Credit Card Spend Assistant. "
+    #                 "I can help with spending analysis, rewards, "
+    #                 "transactions, billing statements, fee waiver "
+    #                 "eligibility, and international spend."
+    #             ),
+    #             "policy_citations": "",
+    #             "page_no": "",
+    #             "document_name": "",
+    #             "sql_query_executed": None,
+    #         },
+    #     }
+    user_name = state.get("user_name")
+
+    detected_name = extract_user_name(state["query"])
+
+    if detected_name:
+        user_name= detected_name
 
     if decision.query_type == "chitchat":
-
         return {
-            **state,
-            "response": {
-                "query": state["query"],
-                "answer": (
-                    "Hello! I'm your Credit Card Spend Assistant. "
-                    "I can help with spending analysis, rewards, "
-                    "transactions, billing statements, fee waiver "
-                    "eligibility and international spend."
-                ),
-                "policy_citations": "",
-                "page_no": "",
-                "document_name": "",
-                "sql_query_executed": None,
-            },
+           **state,
+            "intent": intent_data,
+            "user_name": user_name,
         }
 
-    # --------------------------
+    # =====================================================
     # OUT OF SCOPE
-    # --------------------------
+    # =====================================================
 
     if decision.query_type == "out_of_scope":
 
         return {
             **state,
-            "response": {
-                "query": state["query"],
-                "answer": (
-                    "I'm specifically designed to assist with "
-                    "credit card spending analysis, rewards, "
-                    "transactions, billing statements and "
-                    "card-related policies. "
-                    "I cannot assist with unrelated topics."
-                ),
-                "policy_citations": "",
-                "page_no": "",
-                "document_name": "",
-                "sql_query_executed": None,
-            },
+            "intent": intent_data,
+            "user_name": user_name,
         }
 
-    # --------------------------
-    # MISSING CARD DETAILS
-    # --------------------------
+    # =====================================================
+    # CREDIT CARD QUERY
+    # =====================================================
 
     query_lower = state["query"].lower()
 
-    # needs_card_context = any(
-    #     keyword in query_lower
-    #     for keyword in [
-    #         "spend",
-    #         "transaction",
-    #         "reward",
-    #         "statement",
-    #         "billing",
-    #         "fee waiver",
-    #         "top merchant",
-    #         "international",
-    #     ]
-    # )
     needs_card_context = any(
         keyword in query_lower
         for keyword in [
             "my spend",
+            "my spending",
             "my transactions",
             "my rewards",
             "what did i spend",
@@ -271,10 +469,14 @@ User Query:
         decision.query_type == "credit_card"
         and needs_card_context
         and not decision.card_id
+        and not state.get("card_id")
     ):
 
         return {
             **state,
+
+            "intent": intent_data,
+
             "response": {
                 "query": state["query"],
                 "answer": (
@@ -287,47 +489,21 @@ User Query:
                 "sql_query_executed": None,
             },
         }
-    # --------------------------
-    # CREDIT CARD QUERY
-    # --------------------------
 
-    # --------------------------
-    # CREDIT CARD QUERY
-    # --------------------------
+    # =====================================================
+    # CREDIT CARD QUERY CONTINUES TO SQL/RAG
+    # =====================================================
 
     return {
         **state,
+        "user_name": user_name,
         "card_id": decision.card_id or state.get("card_id"),
-        "billing_month": (decision.billing_month or state.get("billing_month")),
-        "intent": decision.model_dump(),
+        "billing_month": (
+            decision.billing_month
+            or state.get("billing_month")
+        ),
+        "intent": intent_data,
     }
-
-
-# def vector_search_node(state: RAGState):
-
-#     print("=== VECTOR SEARCH ===")
-
-#     vector_docs = vector_search(state["query"])
-
-#     return {
-#         **state,
-#         "vector_docs": vector_docs,
-#         "hybrid_docs": vector_docs,
-#     }
-
-
-# def fts_search_node(state: RAGState):
-
-#     print("=== FTS SEARCH ===")
-
-#     fts_docs = fts_search(state["query"])
-
-#     return {
-#         **state,
-#         "fts_docs": fts_docs,
-#         "hybrid_docs": fts_docs,
-#     }
-
 
 # ---------------------------------------------------------
 # SUMMARY NODE
@@ -451,10 +627,29 @@ def evaluation_router(state: RAGState):
 
 def intent_router(state: RAGState):
 
-    if state.get("response"):
-        return "end"
-
     intent = state.get("intent", {})
+
+    query_type = intent.get("query_type", "")
+
+    print(f"Routing query_type: {query_type}")
+
+    # -----------------------------------------
+    # CHITCHAT
+    # -----------------------------------------
+
+    if query_type == "chitchat":
+        return "conversation"
+
+    # -----------------------------------------
+    # OUT OF SCOPE
+    # -----------------------------------------
+
+    if query_type == "out_of_scope":
+        return "conversation"
+
+    # -----------------------------------------
+    # CREDIT CARD
+    # -----------------------------------------
 
     need_sql = intent.get("need_sql", False)
     need_rag = intent.get("need_rag", False)
@@ -470,7 +665,7 @@ def intent_router(state: RAGState):
     if need_rag:
         return retrieval_type
 
-    return "end"
+    return "conversation"
 
 
 # ---------------------------------------------------------
@@ -511,6 +706,7 @@ def build_credit_card_graph():
     workflow.add_node("evaluate", evaluate_node)
 
     # workflow.add_node("guardrails", guardrails_node)
+    workflow.add_node("conversation", conversational_node)
 
     workflow.set_entry_point("intent")
 
@@ -518,6 +714,7 @@ def build_credit_card_graph():
         "intent",
         intent_router,
         {
+            "conversation": "conversation",
             "sql": "sql_retrieval",
             "vector": "vector_search",
             "fts": "fts_search",
@@ -548,6 +745,7 @@ def build_credit_card_graph():
     workflow.add_edge("context_builder", "summary")
 
     workflow.add_edge("summary", "evaluate")
+    workflow.add_edge("conversation", END)
 
     workflow.add_conditional_edges(
         "evaluate",
@@ -584,6 +782,7 @@ def run_credit_card_agent(
         "query": query,
         "card_id": card_id,
         "billing_month": billing_month,
+        "user_name": None,
         "sql_context": {},
         "vector_docs": [],
         "fts_docs": [],
