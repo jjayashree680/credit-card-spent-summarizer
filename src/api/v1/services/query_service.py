@@ -19,11 +19,17 @@ from src.api.v1.agents.credit_card_agent import (
 
 def query_documents(
     query: str,
+    thread_id: str | None = None,
+    chat_history: list | None = None,
 ):
 
     guard_input(query)
 
-    result = run_credit_card_agent(query=query)
+    result = run_credit_card_agent(
+        query=query,
+        thread_id=thread_id,
+        chat_history=chat_history,
+    )
 
     if isinstance(result, dict) and result.get("answer"):
 

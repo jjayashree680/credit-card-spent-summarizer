@@ -1,6 +1,7 @@
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Literal
 
 from pydantic import BaseModel, Field
+
 
 from pydantic import BaseModel
 from typing import List
@@ -12,6 +13,8 @@ from typing import List
 
 class QueryRequest(BaseModel):
     query: str
+    thread_id: str | None = None
+    chat_history: list | None = None
 
 
 class SpendSummaryRequest(BaseModel):
@@ -47,6 +50,31 @@ class IntentDecision(BaseModel):
     need_rag: bool = Field(description="Whether RAG retrieval is required")
 
     reason: str = Field(description="Reason for intent classification")
+
+
+# class IntentDecision(BaseModel):
+
+#     query_type: Literal[
+#         "credit_card",
+#         "chitchat",
+#         "out_of_scope",
+#     ]
+
+#     retrieval_type: Literal[
+#         "vector",
+#         "fts",
+#         "hybrid",
+#     ] = "hybrid"
+
+#     card_id: Optional[str] = None
+
+#     billing_month: Optional[str] = None
+
+#     need_sql: bool
+
+#     need_rag: bool
+
+#     reason: str
 
 
 # ==========================
