@@ -3,6 +3,7 @@ import streamlit as st
 import uuid
 
 API_URL = "http://127.0.0.1:8000/api/v1/query/"
+INGEST_API_URL = "http://127.0.0.1:8000/api/v1/ingest/"
 
 
 st.set_page_config(
@@ -34,16 +35,94 @@ if "messages" not in st.session_state:
 
 with st.sidebar:
 
-    st.header("Chat")
+    st.header("📄 Document Management")
+
+    uploaded_file = st.file_uploader(
+        "Upload a document",
+        type=["pdf", "docx", "doc", "txt"],
+        help="Upload a PDF, DOCX, DOC or TXT document for ingestion.",
+    )
+
+    if uploaded_file is not None:
+
+        st.caption(
+            f"Selected: {uploaded_file.name}"
+        )
+
+        if st.button(
+            "📥 Upload & Ingest",
+            use_container_width=True,
+        ):
+
+            with st.spinner(
+                "Uploading and ingesting document..."
+            ):
+
+                try:
+
+                    response = requests.post(
+                        INGEST_API_URL,
+                        files={
+                            "file": (
+                                uploaded_file.name,
+                                uploaded_file.getvalue(),
+                                uploaded_file.type,
+                            )
+                        },
+                        timeout=300,
+                    )
+
+                    if response.status_code == 200:
+
+                        result = response.json()
+
+                        st.success(
+                            result.get(
+                                "message",
+                                "Document ingested successfully.",
+                            )
+                        )
+
+                    else:
+
+                        st.error(
+                            "Ingestion failed:\n\n"
+                            + response.text
+                        )
+
+                except requests.exceptions.ConnectionError:
+
+                    st.error(
+                        "Cannot connect to FastAPI. "
+                        "Make sure the FastAPI server is running."
+                    )
+
+                except requests.exceptions.Timeout:
+
+                    st.error(
+                        "Document ingestion timed out. "
+                        "Please try again."
+                    )
+
+                except Exception as e:
+
+                    st.error(
+                        f"Unexpected error during ingestion: {e}"
+                    )
+
+    st.divider()
+
+    st.header("💬 Chat")
 
     if st.button(
         "🗑️ Clear Chat",
         use_container_width=True,
     ):
+
         st.session_state.messages = []
 
-        # Optional: reset conversation thread
-        st.session_state.thread_id = str(uuid.uuid4())
+        if "selected_query" in st.session_state:
+            st.session_state.selected_query = ""
 
         st.rerun()
 
