@@ -27,6 +27,7 @@ from fastapi import (
     APIRouter,
     HTTPException,
 )
+from fastapi.responses import StreamingResponse
 
 from src.core.guardrails import (
     GuardrailViolation,
@@ -34,6 +35,7 @@ from src.core.guardrails import (
 
 from src.api.v1.services.query_service import (
     query_documents,
+    query_documents_stream,
 )
 
 from src.api.v1.schemas.query_schema import (
@@ -74,3 +76,18 @@ def query_endpoint(
                 "message": violation.message,
             },
         )
+
+
+@router.post("/stream")
+def stream_query(
+    request: QueryRequest,
+):
+
+    return StreamingResponse(
+        query_documents_stream(
+            query=request.query,
+            thread_id=request.thread_id,
+            chat_history=request.chat_history,
+        ),
+        media_type="text/plain",
+    )

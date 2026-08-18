@@ -8,9 +8,14 @@ from dotenv import load_dotenv
 load_dotenv()
 
 
+STREAM_API_URL = "http://127.0.0.1:8000/api/v1/query/stream"
 API_URL = "http://127.0.0.1:8000/api/v1/query/"
 INGEST_API_URL = "http://127.0.0.1:8000/api/v1/ingest/"
 
+
+# ---------------------------------------------------------
+# PAGE CONFIG
+# ---------------------------------------------------------
 
 st.set_page_config(
     page_title="Credit Card Spend Summarizer",
@@ -35,8 +40,8 @@ if "role" not in st.session_state:
 if "username" not in st.session_state:
     st.session_state.username = None
 
-if "selected_page" not in st.session_state:
-    st.session_state.selected_page = "Chat"
+if "selected_query" not in st.session_state:
+    st.session_state.selected_query = ""
 
 
 # ---------------------------------------------------------
@@ -54,7 +59,7 @@ def show_login():
     col1, col2 = st.columns(2)
 
     # -----------------------------------------------------
-    # ADMIN
+    # ADMIN LOGIN
     # -----------------------------------------------------
 
     with col1:
@@ -94,6 +99,8 @@ def show_login():
 
                 st.session_state.role = "admin"
                 st.session_state.username = admin_username
+                st.session_state.messages = []
+                st.session_state.thread_id = str(uuid.uuid4())
 
                 st.rerun()
 
@@ -104,7 +111,7 @@ def show_login():
                 )
 
     # -----------------------------------------------------
-    # GUEST
+    # GUEST LOGIN
     # -----------------------------------------------------
 
     with col2:
@@ -130,6 +137,9 @@ def show_login():
                 else "Guest"
             )
 
+            st.session_state.messages = []
+            st.session_state.thread_id = str(uuid.uuid4())
+
             st.rerun()
 
 
@@ -143,6 +153,7 @@ def logout():
     st.session_state.username = None
     st.session_state.messages = []
     st.session_state.thread_id = str(uuid.uuid4())
+    st.session_state.selected_query = ""
 
     st.rerun()
 
@@ -218,6 +229,8 @@ with st.sidebar:
             uuid.uuid4()
         )
 
+        st.session_state.selected_query = ""
+
         st.rerun()
 
     # -----------------------------------------------------
@@ -261,14 +274,16 @@ if page == "📚 Knowledge Base":
         st.write("• Card benefits")
 
     st.info(
-        "Ask your questions from the Chat page."
+        "Use the Chat page to ask questions about "
+        "credit card policies and benefits."
     )
 
     st.stop()
 
 
 # =========================================================
-# DOCUMENT MANAGEMENT - ADMIN ONLY
+# DOCUMENT MANAGEMENT
+# ADMIN ONLY
 # =========================================================
 
 if page == "📄 Document Management":
@@ -377,10 +392,10 @@ st.caption(
 st.subheader("💡 Suggested Questions")
 
 suggested_questions = [
-    "Summarise my spending for March 2026 on card CC-881001",
-    "What did I spend the most on last month?",
-    "How much did I spend internationally this billing cycle?",
-    "How many reward points did I earn this month?",
+    "What are the rewards on my credit card?",
+    "What are the international transaction benefits?",
+    "What is the fee waiver policy?",
+    "What is the billing cycle for my card?",
 ]
 
 
@@ -388,7 +403,11 @@ col1, col2 = st.columns(2)
 
 for index, question in enumerate(suggested_questions):
 
-    target_col = col1 if index % 2 == 0 else col2
+    target_col = (
+        col1
+        if index % 2 == 0
+        else col2
+    )
 
     with target_col:
 
@@ -426,16 +445,14 @@ query = st.chat_input(
 
 
 # ---------------------------------------------------------
-# SUGGESTED QUESTION
+# SELECTED QUESTION
 # ---------------------------------------------------------
 
-if "selected_query" in st.session_state:
+if st.session_state.selected_query:
 
-    if st.session_state.selected_query:
+    query = st.session_state.selected_query
 
-        query = st.session_state.selected_query
-
-        st.session_state.selected_query = ""
+    st.session_state.selected_query = ""
 
 
 # ---------------------------------------------------------
@@ -460,67 +477,88 @@ if query:
         st.markdown(query)
 
     # -----------------------------------------------------
-    # ASSISTANT
+    # ASSISTANT RESPONSE
     # -----------------------------------------------------
 
     with st.chat_message("assistant"):
 
-        with st.spinner("Thinking..."):
+        placeholder = st.empty()
 
-            try:
+        placeholder.markdown("Thinking...")
 
-                response = requests.post(
-                    API_URL,
-                    json={
-                        "query": query,
-                        "thread_id": st.session_state.thread_id,
-                        "chat_history": st.session_state.messages,
-                        "role": st.session_state.role,
-                        "username": st.session_state.username,
-                    },
-                    timeout=120,
-                )
+        try:
 
-                if response.status_code == 200:
+            response = requests.post(
+                STREAM_API_URL,
+                json={
+                    "query": query,
+                    "thread_id": st.session_state.thread_id,
+                    "chat_history": st.session_state.messages,
+                    "role": st.session_state.role,
+                    "username": st.session_state.username,
+                },
+                stream=True,
+                timeout=120,
+            )
 
-                    result = response.json()
+            if response.status_code != 200:
 
-                    answer = result.get(
-                        "answer",
-                        "I couldn't generate a response.",
-                    )
-
-                    st.markdown(answer)
-
-                    st.session_state.messages.append(
-                        {
-                            "role": "assistant",
-                            "content": answer,
-                        }
-                    )
-
-                else:
-
-                    st.error(
-                        f"API Error: {response.status_code}\n\n"
-                        f"{response.text}"
-                    )
-
-            except requests.exceptions.ConnectionError:
+                placeholder.empty()
 
                 st.error(
-                    "Cannot connect to FastAPI. "
-                    "Make sure the FastAPI server is running."
+                    f"API Error: {response.status_code}\n\n"
+                    f"{response.text}"
                 )
 
-            except requests.exceptions.Timeout:
+            else:
 
-                st.error(
-                    "The request timed out. Please try again."
+                answer = ""
+
+                for chunk in response.iter_content(
+                    chunk_size=None,
+                    decode_unicode=True,
+                ):
+
+                    if chunk:
+
+                        if not answer:
+                            placeholder.empty()
+
+                        answer += chunk
+
+                        placeholder.markdown(
+                            answer
+                        )
+
+                st.session_state.messages.append(
+                    {
+                        "role": "assistant",
+                        "content": answer,
+                    }
                 )
 
-            except Exception as e:
+        except requests.exceptions.ConnectionError:
 
-                st.error(
-                    f"Unexpected error: {e}"
-                )
+            placeholder.empty()
+
+            st.error(
+                "Cannot connect to FastAPI. "
+                "Make sure the FastAPI server is running."
+            )
+
+        except requests.exceptions.Timeout:
+
+            placeholder.empty()
+
+            st.error(
+                "The request timed out. "
+                "Please try again."
+            )
+
+        except Exception as e:
+
+            placeholder.empty()
+
+            st.error(
+                f"Unexpected error: {e}"
+            )
