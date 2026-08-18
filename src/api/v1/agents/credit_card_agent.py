@@ -1167,8 +1167,10 @@ def run_credit_card_agent_stream(
     chunk_size = 30
 
     for i in range(0, len(answer), chunk_size):
+        print("STREAMING CHUNK")
         yield answer[i : i + chunk_size]
-        time.sleep(0.02)
+        time.sleep(0.05)
+    print("STREAM COMPLETED")
     # yield from stream_summary(
     #     query=query,
     #     context=final_state["final_context"],
