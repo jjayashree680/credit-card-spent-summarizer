@@ -22,6 +22,8 @@ def query_documents(
     query: str,
     thread_id: str | None = None,
     chat_history: list | None = None,
+    role: str = "guest",
+    username: str | None = None,
 ):
 
     guard_input(query)
@@ -30,6 +32,8 @@ def query_documents(
         query=query,
         thread_id=thread_id,
         chat_history=chat_history,
+        role=role,
+        username=username,
     )
 
     if isinstance(result, dict) and result.get("answer"):

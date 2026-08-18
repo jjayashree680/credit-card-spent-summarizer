@@ -88,10 +88,21 @@ def validate_sql_result(result):
 
     return True
 
+def get_person_not_found_response(query: str):
+    return {
+        "query": query,
+        "answer": "I couldn't find a credit card matching that person.",
+        "policy_citations": "",
+        "page_no": "",
+        "document_name": "",
+        "sql_query_executed": None,
+    }
 
 def sql_retrieval_node(state):
 
     print("===== NL2SQL NODE =====")
+    role = state.get("role", "guest")
+    username = state.get("username")
 
     query = state["query"]
 
@@ -244,15 +255,22 @@ Resolved Billing Month:
     print(sql_query)
 
     validate_sql(sql_query)
-
-    print("\n===== GENERATED SQL =====\n")
-    print(sql_query)
-
     sql_result = db.run(sql_query)
 
     if not validate_sql_result(sql_result):
 
-        raise ValueError("SQL returned no data.")
+        print("===== SQL RETURNED NO DATA =====")
+
+        return {
+            **state,
+            "sql_context": {
+                "card_id": card_id,
+                "billing_month": billing_month,
+                "generated_sql": sql_query,
+                "query_result": [],
+            },
+            "response": get_person_not_found_response(query),
+        }
 
     sql_context = {
         "card_id": card_id,

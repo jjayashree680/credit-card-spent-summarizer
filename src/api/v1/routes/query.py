@@ -63,6 +63,8 @@ def query_endpoint(
             query=request.query,
             thread_id=request.thread_id,
             chat_history=request.chat_history,
+            role=request.role,
+            username=request.username,
         )
 
     except GuardrailViolation as violation:

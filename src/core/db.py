@@ -39,6 +39,21 @@ def get_vector_store(
         use_jsonb=True,
     )
 
+def get_customer_by_name(db, username: str):
+
+    username = username.strip()
+
+    result = db.run(
+        """
+        SELECT customer_id, full_name
+        FROM customers
+        WHERE full_name ILIKE :username
+        LIMIT 1
+        """,
+        parameters={"username": username},
+    )
+
+    return result
 
 def get_sql_database() -> SQLDatabase:
     """

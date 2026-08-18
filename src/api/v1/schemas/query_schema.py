@@ -15,6 +15,8 @@ class QueryRequest(BaseModel):
     query: str
     thread_id: str | None = None
     chat_history: list | None = None
+    role: str = "guest"
+    username: Optional[str] = None
 
 
 class SpendSummaryRequest(BaseModel):
