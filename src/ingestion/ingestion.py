@@ -93,7 +93,10 @@ def index_add():
 # 3. INGEST DOCUMENT
 # ============================================================
 
-def ingest_document(file_path):
+def ingest_document(
+    file_path,
+    document_name=None,
+):
     """
     Load, split and store the Credit Card
     Knowledge Base into PostgreSQL/pgvector.
@@ -120,10 +123,11 @@ def ingest_document(file_path):
 
         doc.metadata.update(
             {
-                "source": file_path,
+                "source": document_name or file_path,
 
-                "document_name": os.path.basename(
-                    file_path
+                "document_name": (
+                    document_name
+                    or os.path.basename(file_path)
                 ),
 
                 "document_extension": ext,
