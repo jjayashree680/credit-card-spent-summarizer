@@ -98,6 +98,13 @@ def sql_retrieval_node(state):
     card_id = state.get("card_id")
 
     billing_month = state.get("billing_month")
+    effective_query = query
+
+    if card_id:
+        effective_query += f"\nUse card_id={card_id}"
+
+    if billing_month:
+        effective_query += f"\nUse billing_month={billing_month}"
 
     db = get_sql_database()
 
@@ -171,11 +178,25 @@ top_merchants
 international_spend
 reward_points_earned
 mom_change_pct
-Use the following context:
+Resolved Context
 
 card_id = {card_id}
 
 billing_month = {billing_month}
+
+CRITICAL RULES
+
+1. If card_id is provided, ALWAYS filter on that card_id.
+2. If billing_month is provided, ALWAYS use that billing_month.
+3. Do NOT replace billing_month with CURRENT_DATE calculations.
+4. Do NOT infer another month when billing_month is available.
+5. Follow-up questions such as:
+   - "last month"
+   - "this month"
+   - "highest spend category"
+   - "top merchant"
+   must use the provided card_id and billing_month.
+6. CURRENT_DATE may be used ONLY when billing_month is NULL.
 
 Return SQL only.
 
@@ -191,18 +212,27 @@ Database Schema:
                 "human",
                 """
 Question:
-
 {query}
-                """,
+
+Resolved Card ID:
+{card_id}
+
+Resolved Billing Month:
+{billing_month}
+    """,
             ),
         ]
     )
 
     chain = prompt | llm
+    print("NL2SQL CARD ID =", card_id)
+    print("NL2SQL BILLING MONTH =", billing_month)
+    print("EFFECTIVE QUERY =")
+    print(effective_query)
 
     result = chain.invoke(
         {
-            "query": query,
+            "query": effective_query,
             "schema": schema,
             "card_id": card_id,
             "billing_month": billing_month,

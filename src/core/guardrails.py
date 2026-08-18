@@ -115,9 +115,19 @@ def mask_customer_id(match):
 
     customer_id = match.group()
 
+    if customer_id.startswith("C-"):
+
+        digits = customer_id[2:]
+
+        if len(digits) >= 4:
+
+            return f"C-{digits[0]}" + "*" * (len(digits) - 2) + f"{digits[-1]}"
+
+        return "C-****"
+
     if len(customer_id) >= 4:
 
-        return f"{customer_id[:2]}" f"*****" f"{customer_id[-2:]}"
+        return customer_id[:2] + "*" * (len(customer_id) - 4) + customer_id[-2:]
 
     return "<CUSTOMER_ID>"
 

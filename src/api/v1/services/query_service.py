@@ -14,6 +14,7 @@ from src.core.guardrails import (
 
 from src.api.v1.agents.credit_card_agent import (
     run_credit_card_agent,
+    run_credit_card_agent_stream,
 )
 
 
@@ -36,3 +37,18 @@ def query_documents(
         result["answer"] = guard_output(result["answer"])
 
     return result
+
+
+def query_documents_stream(
+    query: str,
+    thread_id: str | None = None,
+    chat_history: list | None = None,
+):
+
+    guard_input(query)
+
+    yield from run_credit_card_agent_stream(
+        query=query,
+        thread_id=thread_id,
+        chat_history=chat_history,
+    )

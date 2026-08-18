@@ -3,7 +3,14 @@ import re
 
 from dotenv import load_dotenv
 
+from datetime import datetime
+
+
+import re
+
+
 from typing import Literal
+import time
 
 from pydantic import BaseModel
 
@@ -16,6 +23,7 @@ from langgraph.checkpoint.memory import MemorySaver
 
 # from src.api.v1.tools.guardrails_tool import guardrails_node
 
+from src.core.guardrails import guard_output
 from src.api.v1.states.rag_state import RAGState
 
 from src.api.v1.tools.sql_retrieval_tool import sql_retrieval_node
@@ -37,7 +45,9 @@ load_dotenv()
 def get_llm():
 
     return ChatOpenAI(
-        model=os.getenv("OPENAI_CHAT_MODEL"), api_key=os.getenv("OPENAI_API_KEY")
+        model=os.getenv("OPENAI_CHAT_MODEL"),
+        api_key=os.getenv("OPENAI_API_KEY"),
+        streaming=True,
     )
 
 
@@ -376,14 +386,14 @@ Current User Query:
     card_id = decision.card_id
 
     billing_month = decision.billing_month
-
     history = state.get("chat_history", [])
-
-    # Recover card id from previous conversation
 
     if not card_id:
 
         for message in reversed(history):
+
+            if message["role"] != "user":
+                continue
 
             content = message.get("content", "")
 
@@ -403,6 +413,97 @@ Current User Query:
                 )
 
                 break
+
+    if not billing_month:
+
+        month_map = {
+            "january": "01",
+            "february": "02",
+            "march": "03",
+            "april": "04",
+            "may": "05",
+            "june": "06",
+            "july": "07",
+            "august": "08",
+            "september": "09",
+            "october": "10",
+            "november": "11",
+            "december": "12",
+        }
+
+        for message in reversed(history):
+
+            if message.get("role") != "user":
+                continue
+
+            content = message.get("content", "")
+
+            # Already in YYYY-MM format
+            match = re.search(
+                r"\b(20\d{2}-\d{2})\b",
+                content,
+            )
+
+            if match:
+
+                billing_month = match.group(1)
+
+                print(
+                    "RECOVERED BILLING MONTH =",
+                    billing_month,
+                )
+
+                break
+
+            # Month Year format (e.g. March 2026)
+            month_match = re.search(
+                r"\b("
+                r"January|February|March|April|May|June|"
+                r"July|August|September|October|November|December"
+                r")\s+(20\d{2})\b",
+                content,
+                re.IGNORECASE,
+            )
+
+            if month_match:
+
+                month_name = month_match.group(1).lower()
+                year = month_match.group(2)
+
+                billing_month = f"{year}-{month_map[month_name]}"
+
+                print(
+                    "RECOVERED BILLING MONTH =",
+                    billing_month,
+                )
+
+                break
+    history = state.get("chat_history", [])
+
+    # Recover card id from previous conversation
+
+    # if not card_id:
+
+    #     for message in reversed(history):
+
+    #         content = message.get("content", "")
+
+    #         match = re.search(
+    #             r"CC-\d+",
+    #             content,
+    #             re.IGNORECASE,
+    #         )
+
+    #         if match:
+
+    #             card_id = match.group()
+
+    #             print(
+    #                 "RECOVERED CARD ID =",
+    #                 card_id,
+    #             )
+
+    #             break
 
     print("RETRIEVAL TYPE =", decision.retrieval_type)
 
@@ -541,15 +642,23 @@ Current User Query:
     # =====================================================
     # CREDIT CARD QUERY CONTINUES TO SQL/RAG
     # =====================================================
-    print(
-        "FINAL CARD ID =",
-        card_id,
-    )
+    print("###############")
+    print("FINAL CARD ID =", card_id)
+    print("FINAL BILLING MONTH =", billing_month)
+    print("###############")
+
+    # return {
+    #     **state,
+    #     "user_name": user_name,
+    #     "card_id": card_id or state.get("card_id"),
+    #     "billing_month": (decision.billing_month or state.get("billing_month")),
+    #     "intent": intent_data,
+    # }
     return {
         **state,
         "user_name": user_name,
         "card_id": card_id or state.get("card_id"),
-        "billing_month": (decision.billing_month or state.get("billing_month")),
+        "billing_month": billing_month or state.get("billing_month"),
         "intent": intent_data,
     }
 
@@ -572,34 +681,105 @@ def summary_node(state: RAGState):
             (
                 "system",
                 """
-                You are a Credit Card Spend Intelligence Assistant.
+You are a Credit Card Spend Intelligence Assistant.
 
-                RULES
+RULES
 
-                1. SQL Context contains the source of truth.
-                2. Never change SQL derived values.
-                3. Never invent numbers.
-                4. Use KB Context only for explanations.
-                5. Always provide citations.
-                6. Mention rewards, forex, fee waiver status
-                   when relevant.
-                Do not use markdown tables.
+1. SQL Context is the source of truth.
+2. Never modify SQL-derived values.
+3. Never invent numbers, percentages, dates, or facts.
+4. Use Knowledge Base (KB) Context only for explanations and policy guidance.
+5. Always provide citations.
+6. Mention rewards, forex, and fee-waiver status only when relevant.
+7. Do not use markdown tables.
 
-                Return information using plain text and bullet points.
-                """,
+RESPONSE STYLE RULES
+
+- Match the response detail to the user's question.
+- For simple factual questions, provide a concise answer.
+- For summary, comparison, spend analysis, billing statement, transaction analysis, rewards analysis, and fee-waiver assessments, provide detailed responses with sections and bullet points.
+- Do not generate lengthy reports for simple questions.
+- Use only the amount of information needed to answer the question clearly.
+
+FORMATTING RULES
+
+For summary or analytics questions:
+- Use markdown headings.
+- Use markdown bullet points.
+- Use separate sections.
+- Use clear labels and values.
+- Every category should be a bullet point.
+- Every merchant should be a bullet point.
+
+For direct factual questions:
+- Answer in 1 to 5 sentences.
+- Do not create multiple sections unless necessary.
+- Use bullet points only when they improve clarity.
+
+EXAMPLE 1
+
+User:
+What is the annual membership fee?
+
+Response:
+
+The annual membership fee for the NorthStar Gold card is Rs. 999 + GST.
+
+Citation: NorthStar Bank Credit Card Product Guide.
+
+EXAMPLE 2
+
+User:
+What did I spend the most on last month?
+
+Response:
+
+You spent the most on Travel in March 2026.
+
+- Amount: Rs. 40,900.00
+- Transactions: 2
+
+Citation: SQL query result.
+
+EXAMPLE 3
+
+User:
+Summarise my spending for March 2026.
+
+Response:
+
+## Spend Summary
+
+- Total Spend: Rs. 106,800.00
+- Reward Points Earned: 1,550
+- International Spend: Rs. 50,900.00
+
+## Category Breakdown
+
+- Travel: Rs. 40,900.00
+- Shopping: Rs. 30,500.00
+- Jewellery: Rs. 9,800.00
+
+## Top Merchants
+
+- Singapore Airlines: Rs. 32,400.00
+- Amazon UK: Rs. 18,500.00
+
+Citation: SQL query result.
+            """,
             ),
             (
                 "human",
                 """
-                Conversation History:
-                {chat_history}
+Conversation History:
+{chat_history}
 
-                Current User Query:
-                {query}
+Current User Query:
+{query}
 
-                Context:
-                {context}
-                """,
+Context:
+{context}
+            """,
             ),
         ]
     )
@@ -622,6 +802,66 @@ def summary_node(state: RAGState):
         "response": response.model_dump(),
         "retry_count": state.get("retry_count", 0) + 1,
     }
+
+
+# ---------------------------------------------------------
+# STREAMING SUMMARY
+# ---------------------------------------------------------
+
+
+def stream_summary(
+    query: str,
+    context: str,
+    chat_history: list,
+):
+
+    llm = get_llm()
+
+    prompt = ChatPromptTemplate.from_messages(
+        [
+            (
+                "system",
+                """
+You are a Credit Card Spend Intelligence Assistant.
+
+Rules:
+- Use only the supplied context.
+- Do not invent information.
+- Answer directly.
+- Be concise.
+- Avoid repetition.
+- Do not use markdown tables.
+- Use bullet points when listing multiple items.
+- Keep explanations easy to read.
+            """,
+            ),
+            (
+                "human",
+                """
+Conversation History:
+{chat_history}
+
+Current Query:
+{query}
+
+Context:
+{context}
+                """,
+            ),
+        ]
+    )
+
+    chain = prompt | llm
+
+    for chunk in chain.stream(
+        {
+            "query": query,
+            "context": context,
+            "chat_history": chat_history,
+        }
+    ):
+        if hasattr(chunk, "content") and chunk.content:
+            yield chunk.content
 
 
 # ---------------------------------------------------------
@@ -875,5 +1115,62 @@ def run_credit_card_agent(
     final_state = credit_card_graph.invoke(
         initial_state, config={"configurable": {"thread_id": thread_id}}
     )
+    # context = final_state["final_context"]
+
+    # yield from stream_summary(
+    #     query=query,
+    #     context=context,
+    # )
 
     return final_state["response"]
+
+
+def run_credit_card_agent_stream(
+    query: str,
+    card_id: str | None = None,
+    billing_month: str | None = None,
+    thread_id: str = "default",
+    chat_history: list | None = None,
+):
+
+    initial_state = {
+        "query": query,
+        "card_id": card_id,
+        "billing_month": billing_month,
+        "chat_history": chat_history or [],
+        "user_name": None,
+        "sql_context": {},
+        "vector_docs": [],
+        "fts_docs": [],
+        "hybrid_docs": [],
+        "reranked_docs": [],
+        "final_context": "",
+        "response": {},
+        "retry_count": 0,
+    }
+
+    final_state = credit_card_graph.invoke(
+        initial_state,
+        config={"configurable": {"thread_id": thread_id}},
+    )
+    answer = final_state["response"]["answer"]
+
+    print("===== ANSWER REPR =====")
+
+    print(repr(answer))
+
+    print("===== ANSWER REPR =====")
+    answer = guard_output(answer)
+
+    answer = answer.replace("<br>", "\n")
+
+    chunk_size = 30
+
+    for i in range(0, len(answer), chunk_size):
+        yield answer[i : i + chunk_size]
+        time.sleep(0.02)
+    # yield from stream_summary(
+    #     query=query,
+    #     context=final_state["final_context"],
+    #     chat_history=chat_history or [],
+    # )
