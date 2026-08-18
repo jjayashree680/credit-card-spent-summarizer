@@ -199,6 +199,9 @@ Rules:
 def intent_node(state: RAGState):
 
     print("=== INTENT NODE ===")
+    print("ROLE =", state.get("role"))
+    print("USERNAME =", state.get("username"))
+    print("QUERY =", state.get("query"))
 
     llm = get_llm()
 
@@ -415,6 +418,38 @@ Current User Query:
 
     intent_data = decision.model_dump()
 
+    # =====================================================
+    # GUEST CUSTOMER-DATA ACCESS CONTROL
+    # =====================================================
+
+    role = state.get("role", "guest")
+
+    if role == "guest" and decision.query_type == "credit_card":
+
+        # Any SQL-backed request can expose customer/card data.
+        if decision.need_sql:
+
+            print("GUEST BLOCKED: customer data request")
+
+            return {
+                **state,
+                "intent": intent_data,
+                "response": {
+                    "query": state["query"],
+                    "answer": (
+                        "Guest access is limited to general "
+                        "credit card information. Customer "
+                        "spending, transactions, rewards, and "
+                        "card details are available only to "
+                        "authorized users."
+                    ),
+                    "policy_citations": "",
+                    "page_no": "",
+                    "document_name": "",
+                    "sql_query_executed": None,
+                },
+            }
+
     print(f"Saved intent: {intent_data}")
 
     # =====================================================
@@ -494,6 +529,65 @@ Current User Query:
             "user_name": user_name,
         }
 
+    # =====================================================
+    # GUEST ACCESS CONTROL
+    # =====================================================
+
+    role = state.get("role", "guest")
+    username = state.get("username")
+
+    if role == "guest" and username:
+
+        current_query = state["query"].strip()
+
+        # Detect requests for another person's information
+        other_person_patterns = [
+            r"(?:spend|spending|transactions|rewards|reward points)\s+(?:of|for)\s+([A-Za-z]+(?:\s+[A-Za-z]+)+)",
+            r"(?:credit card id|card id)\s+(?:of|for)\s+([A-Za-z]+(?:\s+[A-Za-z]+)+)",
+        ]
+
+        requested_person = None
+
+        for pattern in other_person_patterns:
+
+            match = re.search(
+                pattern,
+                current_query,
+                re.IGNORECASE,
+            )
+
+            if match:
+                requested_person = match.group(1).strip()
+                break
+
+        if requested_person:
+
+            # Compare requested person with logged-in username
+            if requested_person.lower() != username.strip().lower():
+
+                print(
+                    "GUEST BLOCKED:",
+                    username,
+                    "requested:",
+                    requested_person,
+                )
+
+                return {
+                    **state,
+                    "intent": intent_data,
+                    "user_name": user_name,
+                    "response": {
+                        "query": state["query"],
+                        "answer": (
+                            "I can only provide credit card "
+                            "information for your admin account."
+                        ),
+                        "policy_citations": "",
+                        "page_no": "",
+                        "document_name": "",
+                        "sql_query_executed": None,
+                    },
+                }
     # =====================================================
     # CREDIT CARD QUERY
     # =====================================================
@@ -704,6 +798,14 @@ def evaluation_router(state: RAGState):
 
 def intent_router(state: RAGState):
 
+    # -----------------------------------------
+    # RESPONSE ALREADY GENERATED
+    # -----------------------------------------
+
+    if state.get("response"):
+        print("Response already generated. Ending graph.")
+        return "end"
+
     intent = state.get("intent", {})
 
     query_type = intent.get("query_type", "")
@@ -854,12 +956,16 @@ def run_credit_card_agent(
     billing_month: str | None = None,
     thread_id: str = "default",
     chat_history: list | None = None,
+    role: str = "guest",
+    username: str | None = None,
 ):
 
     initial_state = {
         "query": query,
         "card_id": card_id,
         "billing_month": billing_month,
+        "role": role,
+        "username": username,
         "user_name": None,
         "sql_context": {},
         "vector_docs": [],

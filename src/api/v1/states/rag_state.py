@@ -18,3 +18,5 @@ class RAGState(TypedDict, total=False):
     retry_count: int
     chat_history: list
     evaluation_result: dict
+    role: str = "guest"
+    username: str | None = None
