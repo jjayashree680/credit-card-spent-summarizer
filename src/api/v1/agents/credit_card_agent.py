@@ -450,100 +450,75 @@ Current User Query:
 
                     break
 
-        # =================================================
-        # RECOVER BILLING MONTH FROM PREVIOUS CONVERSATION
-        # =================================================
+    # =================================================
+    # RECOVER BILLING MONTH FROM PREVIOUS CONVERSATION
+    # =================================================
 
-        if not billing_month:
+    if not billing_month:
 
-            month_map = {
-                "january": "01",
-                "february": "02",
-                "march": "03",
-                "april": "04",
-                "may": "05",
-                "june": "06",
-                "july": "07",
-                "august": "08",
-                "september": "09",
-                "october": "10",
-                "november": "11",
-                "december": "12",
-            }
+        month_map = {
+            "january": "01",
+            "february": "02",
+            "march": "03",
+            "april": "04",
+            "may": "05",
+            "june": "06",
+            "july": "07",
+            "august": "08",
+            "september": "09",
+            "october": "10",
+            "november": "11",
+            "december": "12",
+        }
 
-            for message in reversed(history):
+        for message in reversed(history):
 
-                if message.get("role") != "user":
-                    continue
+            if message.get("role") != "user":
+                continue
 
-                content = message.get("content", "")
+            content = message.get("content", "")
 
-                match = re.search(
-                    r"\b(20\d{2}-\d{2})\b",
-                    content,
+            match = re.search(
+                r"\b(20\d{2}-\d{2})\b",
+                content,
+            )
+
+            if match:
+
+                billing_month = match.group(1)
+
+                print(
+                    "RECOVERED BILLING MONTH =",
+                    billing_month,
                 )
 
-                if match:
+                break
 
-                    billing_month = match.group(1)
+            month_match = re.search(
+                r"\b("
+                r"January|February|March|April|May|June|"
+                r"July|August|September|October|November|December"
+                r")\s+(20\d{2})\b",
+                content,
+                re.IGNORECASE,
+            )
 
-                    print(
-                        "RECOVERED BILLING MONTH =",
-                        billing_month,
-                    )
+            if month_match:
 
-                    break
+                month_name = month_match.group(1).lower()
+                year = month_match.group(2)
 
-                month_match = re.search(
-                    r"\b("
-                    r"January|February|March|April|May|June|"
-                    r"July|August|September|October|November|December"
-                    r")\s+(20\d{2})\b",
-                    content,
-                    re.IGNORECASE,
+                billing_month = (
+                    f"{year}-{month_map[month_name]}"
                 )
 
-                if month_match:
+                print(
+                    "RECOVERED BILLING MONTH =",
+                    billing_month,
+                )
 
-                    month_name = month_match.group(1).lower()
-                    year = month_match.group(2)
-
-                    billing_month = (
-                        f"{year}-{month_map[month_name]}"
-                    )
-
-                    print(
-                        "RECOVERED BILLING MONTH =",
-                        billing_month,
-                    )
-
-                    break
+                break
     history = state.get("chat_history", [])
-
-    # Recover card id from previous conversation
-
-    # if not card_id:
-
-    #     for message in reversed(history):
-
-    #         content = message.get("content", "")
-
-    #         match = re.search(
-    #             r"CC-\d+",
-    #             content,
-    #             re.IGNORECASE,
-    #         )
-
-    #         if match:
-
-    #             card_id = match.group()
-
-    #             print(
-    #                 "RECOVERED CARD ID =",
-    #                 card_id,
-    #             )
-
-    #             break
 
     print("RETRIEVAL TYPE =", decision.retrieval_type)
 
