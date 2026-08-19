@@ -393,96 +393,131 @@ Current User Query:
     billing_month = decision.billing_month
     history = state.get("chat_history", [])
 
-    if not card_id:
+    # =====================================================
+    # PERSON CARD LOOKUP
+    # =====================================================
 
-        for message in reversed(history):
+    person_card_match = re.search(
+        r"(?:credit card id|card id)\s+(?:of|for)\s+([A-Za-z]+(?:\s+[A-Za-z]+)*)",
+        state["query"],
+        re.IGNORECASE,
+    )
 
-            if message["role"] != "user":
-                continue
+    is_person_card_lookup = bool(person_card_match)
 
-            content = message.get("content", "")
+    if is_person_card_lookup:
 
-            match = re.search(
-                r"CC-\d+",
-                content,
-                re.IGNORECASE,
-            )
+        requested_person = person_card_match.group(1).strip()
 
-            if match:
+        print(
+            "PERSON CARD LOOKUP =",
+            requested_person,
+        )
 
-                card_id = match.group()
+        # Do not reuse previous conversation card/month
+        card_id = None
+        billing_month = None
 
-                print(
-                    "RECOVERED CARD ID =",
-                    card_id,
+    else:
+
+        # =================================================
+        # RECOVER CARD ID FROM PREVIOUS CONVERSATION
+        # =================================================
+
+        if not card_id:
+
+            for message in reversed(history):
+
+                if message.get("role") != "user":
+                    continue
+
+                content = message.get("content", "")
+
+                match = re.search(
+                    r"CC-\d+",
+                    content,
+                    re.IGNORECASE,
                 )
 
-                break
+                if match:
 
-    if not billing_month:
+                    card_id = match.group()
 
-        month_map = {
-            "january": "01",
-            "february": "02",
-            "march": "03",
-            "april": "04",
-            "may": "05",
-            "june": "06",
-            "july": "07",
-            "august": "08",
-            "september": "09",
-            "october": "10",
-            "november": "11",
-            "december": "12",
-        }
+                    print(
+                        "RECOVERED CARD ID =",
+                        card_id,
+                    )
 
-        for message in reversed(history):
+                    break
 
-            if message.get("role") != "user":
-                continue
+        # =================================================
+        # RECOVER BILLING MONTH FROM PREVIOUS CONVERSATION
+        # =================================================
 
-            content = message.get("content", "")
+        if not billing_month:
 
-            # Already in YYYY-MM format
-            match = re.search(
-                r"\b(20\d{2}-\d{2})\b",
-                content,
-            )
+            month_map = {
+                "january": "01",
+                "february": "02",
+                "march": "03",
+                "april": "04",
+                "may": "05",
+                "june": "06",
+                "july": "07",
+                "august": "08",
+                "september": "09",
+                "october": "10",
+                "november": "11",
+                "december": "12",
+            }
 
-            if match:
+            for message in reversed(history):
 
-                billing_month = match.group(1)
+                if message.get("role") != "user":
+                    continue
 
-                print(
-                    "RECOVERED BILLING MONTH =",
-                    billing_month,
+                content = message.get("content", "")
+
+                match = re.search(
+                    r"\b(20\d{2}-\d{2})\b",
+                    content,
                 )
 
-                break
+                if match:
 
-            # Month Year format (e.g. March 2026)
-            month_match = re.search(
-                r"\b("
-                r"January|February|March|April|May|June|"
-                r"July|August|September|October|November|December"
-                r")\s+(20\d{2})\b",
-                content,
-                re.IGNORECASE,
-            )
+                    billing_month = match.group(1)
 
-            if month_match:
+                    print(
+                        "RECOVERED BILLING MONTH =",
+                        billing_month,
+                    )
 
-                month_name = month_match.group(1).lower()
-                year = month_match.group(2)
+                    break
 
-                billing_month = f"{year}-{month_map[month_name]}"
-
-                print(
-                    "RECOVERED BILLING MONTH =",
-                    billing_month,
+                month_match = re.search(
+                    r"\b("
+                    r"January|February|March|April|May|June|"
+                    r"July|August|September|October|November|December"
+                    r")\s+(20\d{2})\b",
+                    content,
+                    re.IGNORECASE,
                 )
 
-                break
+                if month_match:
+
+                    month_name = month_match.group(1).lower()
+                    year = month_match.group(2)
+
+                    billing_month = (
+                        f"{year}-{month_map[month_name]}"
+                    )
+
+                    print(
+                        "RECOVERED BILLING MONTH =",
+                        billing_month,
+                    )
+
+                    break
     history = state.get("chat_history", [])
 
     # Recover card id from previous conversation
@@ -555,32 +590,7 @@ Current User Query:
 
     print(f"Saved intent: {intent_data}")
 
-    # =====================================================
-    # CHITCHAT
-    # =====================================================
 
-    # if decision.query_type == "chitchat":
-
-    #     return {
-    #         **state,
-
-    #         # THIS WAS MISSING
-    #         "intent": intent_data,
-
-    #         "response": {
-    #             "query": state["query"],
-    #             "answer": (
-    #                 "Hello! I'm your Credit Card Spend Assistant. "
-    #                 "I can help with spending analysis, rewards, "
-    #                 "transactions, billing statements, fee waiver "
-    #                 "eligibility, and international spend."
-    #             ),
-    #             "policy_citations": "",
-    #             "page_no": "",
-    #             "document_name": "",
-    #             "sql_query_executed": None,
-    #         },
-    #     }
     user_name = state.get("user_name")
 
     if not user_name:
@@ -605,13 +615,6 @@ Current User Query:
                 break
 
     print("FINAL USER NAME =", user_name)
-
-    # detected_name = extract_user_name(state["query"])
-
-    # if detected_name:
-    #     user_name = detected_name
-    # print("DETECTED NAME =", detected_name)
-    # print("CURRENT USER NAME =", user_name)
     print("CHAT HISTORY =", state.get("chat_history"))
     if decision.query_type == "chitchat":
         return {
@@ -743,18 +746,11 @@ Current User Query:
     print("FINAL BILLING MONTH =", billing_month)
     print("###############")
 
-    # return {
-    #     **state,
-    #     "user_name": user_name,
-    #     "card_id": card_id or state.get("card_id"),
-    #     "billing_month": (decision.billing_month or state.get("billing_month")),
-    #     "intent": intent_data,
-    # }
     return {
         **state,
         "user_name": user_name,
-        "card_id": card_id or state.get("card_id"),
-        "billing_month": billing_month or state.get("billing_month"),
+        "card_id": card_id,
+        "billing_month": billing_month,
         "intent": intent_data,
     }
 
