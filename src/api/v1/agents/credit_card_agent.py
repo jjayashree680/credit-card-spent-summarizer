@@ -1072,6 +1072,14 @@ def intent_router(state: RAGState):
 
     return "conversation"
 
+def sql_router(state):
+
+    sql_context = state.get("sql_context")
+
+    if sql_context:
+        return "context_builder"
+
+    return "hybrid_search"
 
 # ---------------------------------------------------------
 # BUILD GRAPH
@@ -1127,7 +1135,6 @@ def build_credit_card_graph():
             "end": END,
         },
     )
-    workflow.add_edge("sql_retrieval", "hybrid_search")
     workflow.add_edge(
         "vector_search",
         "rerank",
@@ -1142,7 +1149,14 @@ def build_credit_card_graph():
         "hybrid_search",
         "rerank",
     )
-
+    workflow.add_conditional_edges(
+        "sql_retrieval",
+        sql_router,
+        {
+            "context_builder": "context_builder",
+            "hybrid_search": "hybrid_search",
+        },
+    )
     # workflow.add_edge("hybrid_search", "rerank")
 
     workflow.add_edge("rerank", "context_builder")
