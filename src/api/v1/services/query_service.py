@@ -47,6 +47,8 @@ def query_documents_stream(
     query: str,
     thread_id: str | None = None,
     chat_history: list | None = None,
+    role: str = "guest",
+    username: str | None = None,
 ):
 
     guard_input(query)
@@ -55,4 +57,6 @@ def query_documents_stream(
         query=query,
         thread_id=thread_id,
         chat_history=chat_history,
+        role=role,
+        username=username,
     )

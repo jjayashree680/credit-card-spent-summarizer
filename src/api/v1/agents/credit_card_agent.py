@@ -209,6 +209,8 @@ Rules:
 def intent_node(state: RAGState):
 
     print("=== INTENT NODE ===")
+    role = state.get("role", "guest")
+    username = state.get("username")
     print("ROLE =", state.get("role"))
     print("USERNAME =", state.get("username"))
     print("QUERY =", state.get("query"))
@@ -1237,6 +1239,8 @@ def run_credit_card_agent_stream(
     billing_month: str | None = None,
     thread_id: str = "default",
     chat_history: list | None = None,
+    role: str = "guest",
+    username: str | None = None,
 ):
 
     initial_state = {
@@ -1244,6 +1248,8 @@ def run_credit_card_agent_stream(
         "card_id": card_id,
         "billing_month": billing_month,
         "chat_history": chat_history or [],
+        "role": role,
+        "username": username,
         "user_name": None,
         "sql_context": {},
         "vector_docs": [],
