@@ -508,9 +508,7 @@ Current User Query:
                 month_name = month_match.group(1).lower()
                 year = month_match.group(2)
 
-                billing_month = (
-                    f"{year}-{month_map[month_name]}"
-                )
+                billing_month = f"{year}-{month_map[month_name]}"
 
                 print(
                     "RECOVERED BILLING MONTH =",
@@ -564,7 +562,6 @@ Current User Query:
             }
 
     print(f"Saved intent: {intent_data}")
-
 
     user_name = state.get("user_name")
 
@@ -690,13 +687,29 @@ Current User Query:
         ]
     )
 
-    if (
-        decision.query_type == "credit_card"
-        and needs_card_context
-        and not decision.card_id
-        and not state.get("card_id")
-    ):
+    # if (
+    #     decision.query_type == "credit_card"
+    #     and needs_card_context
+    #     and not decision.card_id
+    #     and not state.get("card_id")
+    # ):
 
+    #     return {
+    #         **state,
+    #         "intent": intent_data,
+    #         "response": {
+    #             "query": state["query"],
+    #             "answer": (
+    #                 "Please provide a card ID so that I can "
+    #                 "retrieve the requested spending information."
+    #             ),
+    #             "policy_citations": "",
+    #             "page_no": "",
+    #             "document_name": "",
+    #             "sql_query_executed": None,
+    #         },
+    #     }
+    if decision.query_type == "credit_card" and needs_card_context and not card_id:
         return {
             **state,
             "intent": intent_data,
@@ -1250,10 +1263,10 @@ def run_credit_card_agent_stream(
     chunk_size = 30
 
     for i in range(0, len(answer), chunk_size):
-        print("STREAMING CHUNK")
+        # print("STREAMING CHUNK")
         yield answer[i : i + chunk_size]
         time.sleep(0.05)
-    print("STREAM COMPLETED")
+    # print("STREAM COMPLETED")
     # yield from stream_summary(
     #     query=query,
     #     context=final_state["final_context"],
